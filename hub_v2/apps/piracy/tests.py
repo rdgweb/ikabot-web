@@ -113,14 +113,14 @@ class PlanTests(Base):
         route = PiracyRoute.objects.select_related("target").get(pk=data["route"]["route_id"])
         self.assertIn(route.target, group)
         self.assertNotEqual(route.target.account_id, champion.account_id)
-        self.assertGreater(route.raider_crew, route.target_crew * services.WIN_FACTOR)
+        self.assertGreaterEqual(services.win_chance(route.raider_crew, route.target_crew) * 100, month.min_win_percent)
         self.assertEqual(self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")["route"]["route_id"], str(route.pk))
         self.agent(f"/api/agent/piracy/routes/{route.pk}/", "post", status="sent")
         self.agent(f"/api/agent/piracy/routes/{route.pk}/", "post", status="done", message="ganhou")
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         if data["route"]:
             self.assertNotEqual(data["route"]["target_game_account_id"], str(route.target_id))     # not twice in 7 days
-        # a crew that does not surely win takes nothing
+        # a crew without the chance asked takes nothing (1100 against 1000: about 72%)
         PiracyRoute.objects.filter(raider=champion, status="planned").update(status="skipped")
         self.set_strength(champion, points=0, crew=1100)
         self.assertIsNone(self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")["route"])
@@ -197,3 +197,16 @@ class PageTests(Base):
         page = self.client.get("/pirataria/?server=s1-br").content.decode()
         self.assertNotIn("J1<", page)
         self.assertNotIn("Inimigo", page)
+
+
+class WinChanceTests(TestCase):
+    """Each side gets an independent -10%..+10% on its crew; the bigger crew wins."""
+
+    def test_the_chance_follows_the_crews(self):
+        self.assertAlmostEqual(services.win_chance(1000, 1000), 0.5, places=2)
+        self.assertAlmostEqual(services.win_chance(1150, 1000), 0.954, delta=0.01)
+        self.assertEqual(services.win_chance(1223, 1000), 1.0)
+        self.assertLess(services.win_chance(1000, 1223), 0.01)
+        self.assertIsNone(services.win_chance(None, 1000))
+        self.assertTrue(services.sure_win(1150, 1000, 95))
+        self.assertFalse(services.sure_win(1100, 1000, 95))

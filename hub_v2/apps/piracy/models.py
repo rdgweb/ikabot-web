@@ -30,6 +30,7 @@ class PiracyMonth(UUIDTimestampModel):
     chosen_by = models.CharField(max_length=12, default="sorteio")        # sorteio | escolha
     share_percent = models.PositiveSmallIntegerField(default=10)       # the others convert this share of their points...
     share_every_hours = models.PositiveSmallIntegerField(default=24)   # ...once in this many hours
+    min_win_percent = models.PositiveSmallIntegerField(default=95)     # raid only with at least this chance of winning
     notes = models.TextField(blank=True, default="")
 
     class Meta:

@@ -43,6 +43,20 @@ def _clock_human(clock) -> str:
     return f"{days}d {rest // 3600}h" if days else f"{rest // 3600}h {(rest % 3600) // 60:02d}min"
 
 
+def _best_odds(rows, able) -> list[dict]:
+    """The best chances of winning among the accounts (crew against crew), the strongest pairs first."""
+    crews = [(r["ga"], r["crew"]) for r in rows if r["ga"].pk in able and r.get("crew") is not None]
+    out = []
+    for raider, crew in crews:
+        for target, other in crews:
+            if raider.account_id == target.account_id:
+                continue
+            chance = services.win_chance(int(crew), int(other))
+            if chance is not None:
+                out.append({"raider": raider, "target": target, "chance": round(chance * 100)})
+    return sorted(out, key=lambda o: -o["chance"])[:6]
+
+
 class PiracyView(LoginRequiredMixin, View):
     def get(self, request):
         server = _server(request)
@@ -71,6 +85,7 @@ class PiracyView(LoginRequiredMixin, View):
             "eligible_count": len(able), "groups": groups, "routes": routes, "history": history, "own_ranked": own_ranked,
             "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
             "can_run": _can_run(request), "base_template": _base(request), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1),
+            "best_odds": _best_odds(data.get("rows", []), able),
         })
 
     def post(self, request):
@@ -89,7 +104,8 @@ class PiracyView(LoginRequiredMixin, View):
                     champions = [pool[i] for i in ids if i in pool]
                 month = services.plan_month(request.organization, server, champions=champions,
                                             share_percent=int(request.POST.get("share_percent") or 10),
-                                            share_every_hours=int(request.POST.get("share_every_hours") or 24))
+                                            share_every_hours=int(request.POST.get("share_every_hours") or 24),
+                                            min_win_percent=int(request.POST.get("min_win_percent") or 95))
                 names = ", ".join(c.game_account.name for c in month.champions.select_related("game_account"))
                 record("piracy.month_planned", target=month, target_label=f"{server}: {names}")
                 messages.success(request, f"Campeãs do mês: {names}.")
@@ -98,8 +114,10 @@ class PiracyView(LoginRequiredMixin, View):
                 if month:
                     month.share_percent = max(0, min(100, int(request.POST.get("share_percent") or 0)))
                     month.share_every_hours = max(1, min(240, int(request.POST.get("share_every_hours") or 24)))
-                    month.save(update_fields=["share_percent", "share_every_hours", "updated_at"])
-                    messages.success(request, f"As outras contas convertem {month.share_percent}% a cada {month.share_every_hours}h.")
+                    month.min_win_percent = max(50, min(100, int(request.POST.get("min_win_percent") or 95)))
+                    month.save(update_fields=["share_percent", "share_every_hours", "min_win_percent", "updated_at"])
+                    messages.success(request, f"As outras contas convertem {month.share_percent}% a cada {month.share_every_hours}h; "
+                                              f"assalto só com {month.min_win_percent}% de chance de vencer ou mais.")
             elif action == "close":
                 month = services.current_month(server)
                 if month:

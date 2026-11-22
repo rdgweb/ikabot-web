@@ -178,6 +178,7 @@ def overview(server_id: str) -> dict:
 # ── the month ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 WIN_FACTOR = 1.1 / 0.9       # each side gets -10%..+10% on its crew: a sure win needs crew > target crew x 1.1 / 0.9
+BONUS = 0.1
 MIN_POINTS = 100             # fewer capture points than this are not worth a raid
 PAIR_DAYS = 7                # the same raider takes from the same account once in this many days
 ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)
@@ -263,7 +264,8 @@ def build_groups(accounts: list, champions: list) -> list[dict]:
 
 @transaction.atomic
 def plan_month(organization, server_id: str, *, champions: list | None = None, now: datetime | None = None,
-               rng: random.Random | None = None, share_percent: int = 10, share_every_hours: int = 24):
+               rng: random.Random | None = None, share_percent: int = 10, share_every_hours: int = 24,
+               min_win_percent: int = 95):
     """Close the open month of that server and start a new one: champions, passers and origins of each group."""
     now = now or timezone.now()
     old = current_month(server_id)
@@ -281,7 +283,8 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
     month = PiracyMonth.objects.create(organization=organization, server_id=server_id, starts_at=starts, ends_at=ends,
                                        chosen_by="escolha" if champions else "sorteio",
                                        share_percent=max(0, min(100, int(share_percent))),
-                                       share_every_hours=max(1, min(240, int(share_every_hours or 24))))
+                                       share_every_hours=max(1, min(240, int(share_every_hours or 24))),
+                                       min_win_percent=max(50, min(100, int(min_win_percent or 95))))
     for number, group in enumerate(build_groups(accounts, chosen), start=1):
         PiracyChampion.objects.create(month=month, game_account=group["champion"], group=number)
         PiracyMember.objects.create(month=month, game_account=group["champion"], role=PiracyMember.CHAMPION, group=number)
@@ -321,8 +324,27 @@ def strength(game_account) -> dict:
     return {"crew": int(crew) if crew is not None else None, "points": int(points) if points is not None else None}
 
 
-def sure_win(raider_crew: int | None, target_crew: int | None) -> bool:
-    return raider_crew is not None and target_crew is not None and raider_crew > target_crew * WIN_FACTOR
+def win_chance(raider_crew: int | None, target_crew: int | None) -> float | None:
+    """The chance the raider wins: each side's crew gets an independent random -10%..+10%, the bigger wins.
+    P(a(1+x) > b(1+y)) with x, y uniform — integrated over the target's crew (exact enough with 400 steps)."""
+    if raider_crew is None or target_crew is None:
+        return None
+    if target_crew <= 0:
+        return 1.0
+    if raider_crew <= 0:
+        return 0.0
+    low_a, high_a = raider_crew * (1 - BONUS), raider_crew * (1 + BONUS)
+    low_b, high_b = target_crew * (1 - BONUS), target_crew * (1 + BONUS)
+    steps, total = 400, 0.0
+    for i in range(steps):
+        y = low_b + (high_b - low_b) * (i + 0.5) / steps
+        total += min(1.0, max(0.0, (high_a - y) / (high_a - low_a)))
+    return total / steps
+
+
+def sure_win(raider_crew: int | None, target_crew: int | None, min_percent: int = 100) -> bool:
+    chance = win_chance(raider_crew, target_crew)
+    return chance is not None and chance * 100 >= min(100, max(1, min_percent)) - 1e-9
 
 
 def _target_info(target) -> dict | None:
@@ -399,7 +421,7 @@ def next_for(game_account, now: datetime | None = None) -> dict:
         if PiracyMember.LEVEL[other.role] >= level or ga.account_id == game_account.account_id or ga.pk in recent:
             continue
         theirs = strength(ga)
-        if (theirs["points"] or 0) < MIN_POINTS or not sure_win(mine["crew"], theirs["crew"]):
+        if (theirs["points"] or 0) < MIN_POINTS or not sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
             continue
         candidates.append((theirs["points"], theirs["crew"], ga))
     for points, crew, ga in sorted(candidates, key=lambda c: -c[0]):
