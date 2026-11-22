@@ -64,6 +64,7 @@ class Base(TestCase):
         job.save(update_fields=["inputs_json"])
 
     def plan(self, **kwargs):
+        kwargs.setdefault("now", timezone.now() - services.START_DELAY - timedelta(minutes=1))   # already running
         token = activate(self.org)
         try:
             return services.plan_month(self.org, "s1-br", rng=random.Random(kwargs.pop("seed", 7)), **kwargs)
@@ -145,14 +146,21 @@ class PlanTests(Base):
         self.assertEqual(PiracyRoute.objects.get(pk=data["route"]["route_id"]).outside_id, target.pk)
         self.assertIsNone(self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}")["route"])
 
-    def test_nothing_before_the_month_starts(self):
+    def test_it_starts_15_minutes_after_the_draw_and_runs_through_the_next_ranking(self):
         for snap in AccountSnapshot.objects.all():
             snap.base_snapshot["piracy_highscore"]["time_left"] = 3600       # the ranking turns in an hour
             snap.save()
-        month = self.plan()
-        self.assertGreater(month.starts_at, timezone.now() + timedelta(minutes=50))
+        month = self.plan(now=timezone.now())
+        self.assertAlmostEqual((month.starts_at - timezone.now()).total_seconds(), 15 * 60, delta=30)
+        self.assertGreater(month.ends_at, timezone.now() + timedelta(days=29))
+        # the roles swap at the turn, then every 7 days from it
+        self.assertAlmostEqual((month.turn_at - timezone.now()).total_seconds(), 3600, delta=60)
+        self.assertEqual(services.next_rotation(month), month.turn_at)
+        self.assertEqual(services.rotation_index(month, month.turn_at - timedelta(minutes=1)), 0)
+        self.assertEqual(services.rotation_index(month, month.turn_at + timedelta(minutes=1)), 1)
+        self.assertEqual(services.next_rotation(month, month.turn_at + timedelta(minutes=1)), month.turn_at + timedelta(days=7))
         origin = month.members.filter(role="origin").first().game_account
-        self.assertFalse(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["hold"])
+        self.assertFalse(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["hold"])   # 15 minutes still
 
 
 class EligibilityTests(Base):

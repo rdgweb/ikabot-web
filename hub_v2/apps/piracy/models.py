@@ -34,6 +34,7 @@ class PiracyMonth(UUIDTimestampModel):
     min_points = models.PositiveIntegerField(default=10000)            # an account is taken from once it holds this many points
     paused = models.BooleanField(default=False)                        # paused: every account plays as if there were no plan
     rotate_days = models.PositiveSmallIntegerField(default=7)          # origins and passers swap roles every this many days
+    turn_at = models.DateTimeField(null=True, blank=True)              # a ranking turn inside the plan: roles swap there too
     notes = models.TextField(blank=True, default="")
 
     class Meta:

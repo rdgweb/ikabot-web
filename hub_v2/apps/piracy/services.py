@@ -183,6 +183,7 @@ WIN_FACTOR = 1.1 / 0.9       # each side gets -10%..+10% on its crew: a sure win
 BONUS = 0.1
 MIN_POINTS = 100             # fewer capture points than this are not worth a raid (targets by hand)
 DRAW_HOURS = 24              # a raid of the plan happens at a random time within this many hours
+START_DELAY = timedelta(minutes=15)   # the plan starts this long after it is drawn
 PAIR_DAYS = 7                # the same raider takes from the same account once in this many days
 ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)
 
@@ -192,16 +193,27 @@ def current_month(server_id: str):
 
 
 def rotation_index(month, now: datetime | None = None) -> int:
-    """Which turn of the role swap the month is in (0 before it starts)."""
+    """Which turn of the role swap the month is in (0 before it starts). A ranking turn inside the plan ends the first
+    turn; from it the roles swap every rotate_days."""
     now = now or timezone.now()
+    step = max(1, month.rotate_days) * 86400
     if now < month.starts_at:
         return 0
-    return int((now - month.starts_at).total_seconds() // (max(1, month.rotate_days) * 86400))
+    if month.turn_at:
+        if now < month.turn_at:
+            return 0
+        return 1 + int((now - month.turn_at).total_seconds() // step)
+    return int((now - month.starts_at).total_seconds() // step)
 
 
 def next_rotation(month, now: datetime | None = None):
     now = now or timezone.now()
-    return month.starts_at + timedelta(days=max(1, month.rotate_days) * (rotation_index(month, now) + 1))
+    step = timedelta(days=max(1, month.rotate_days))
+    if month.turn_at:
+        if now < month.turn_at:
+            return month.turn_at
+        return month.turn_at + step * (rotation_index(month, now))
+    return month.starts_at + step * (rotation_index(month, now) + 1)
 
 
 def members_now(month, now: datetime | None = None) -> list:
@@ -235,15 +247,15 @@ def month_roles(month) -> dict:
 
 
 def month_window(server_id: str, now: datetime | None = None) -> tuple[datetime, datetime]:
-    """From now to when the ranking turns (the clock the Pirate Fortress job reads), or a month when unknown. With
-    less than two days left the plan is for the next ranking: it starts when this one turns."""
+    """The plan starts START_DELAY after it is drawn and runs until the ranking turns (the clock the Pirate Fortress job
+    reads), or a month when unknown. With less than two days left it runs on through the next ranking too."""
     now = now or timezone.now()
+    start = now + START_DELAY
     clock = overview_clock(server_id)
     if clock is not None and clock < 2 * 86400:
-        start = now + timedelta(seconds=clock)
-        return start, start + timedelta(days=MONTH_FALLBACK_DAYS)
+        return start, now + timedelta(seconds=clock) + timedelta(days=MONTH_FALLBACK_DAYS)
     end = now + timedelta(seconds=clock) if clock else now + timedelta(days=MONTH_FALLBACK_DAYS)
-    return now, end
+    return start, end
 
 
 def overview_clock(server_id: str) -> int | None:
@@ -338,7 +350,10 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
     if any(ga not in accounts for ga in chosen):
         raise ValueError("A campeã precisa ter fortaleza pirata e o Pirata Automático rodando.")
     starts, ends = month_window(server_id, now)
+    clock = overview_clock(server_id)
+    turn_at = (now + timedelta(seconds=clock)) if clock is not None and clock < 2 * 86400 else None
     month = PiracyMonth.objects.create(organization=organization, server_id=server_id, starts_at=starts, ends_at=ends,
+                                       turn_at=turn_at,
                                        chosen_by="escolha" if champions else "sorteio",
                                        share_percent=max(0, min(100, int(share_percent))),
                                        share_every_hours=max(1, min(240, int(share_every_hours or 24))),

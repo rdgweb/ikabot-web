@@ -115,7 +115,7 @@
       <span class="org-chip off">vitória ≥ {{ month.min_win_percent }}%</span>
       <span class="org-chip off">a partir de {{ month.min_points|intcomma }} pts, hora sorteada em 24h</span>
       <span class="org-chip off">as outras convertem {{ month.share_percent }}% a cada {{ month.share_every_hours }}h</span>
-      <span class="org-chip gold"><i class="bi bi-arrow-repeat"></i> origens e passagens trocam a cada {{ month.rotate_days }} dias · próxima troca {{ next_turn|date:"d/m H:i" }}</span>
+      <span class="org-chip gold"><i class="bi bi-arrow-repeat"></i> origens e passagens trocam {% if month.turn_at %}na virada do ranking e depois {% endif %}a cada {{ month.rotate_days }} dias · próxima troca {{ next_turn|date:"d/m H:i" }}</span>
     </div>
     {% if can_run %}
     <form method="post" class="pr-set" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
