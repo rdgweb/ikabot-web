@@ -759,6 +759,15 @@ class PiracyMissionRunner(BaseRunner):
             return False, max(0, _to_int(payload.get("endUpgradeTime")) - int(time.time()))
         return False, 0
 
+    @staticmethod
+    def _colony_gone(client, city_id: int) -> bool:
+        """True only when the game's town list was read and the temporary colony is not in it."""
+        try:
+            owned = fetch_owned_cities(client)
+        except Exception:
+            return False
+        return bool(owned) and not any(_to_int(item.get("id")) == city_id for item in owned)
+
     def _abandon_temp_colony(self, jid: str, client, game_account_id: str, city_id: int) -> RunnerResult | None:
         if city_id <= 0:
             self.log(jid, "error", f"SEGURANCA: tentativa de abandonar city_id invalido ({city_id}) bloqueada")
@@ -983,6 +992,20 @@ class PiracyMissionRunner(BaseRunner):
                             reschedule_seconds=recheck,
                             reschedule_inputs={**inputs, **_state_inputs, "_targeted_phase": "wait_abandon"},
                             data={"status": "waiting_assault_end", "temp_city_id": temp_city_id},
+                        )
+                    # N-211 (22/11): the colony may be gone already (abandoned by hand): asking the game to abandon a
+                    # town that is not there failed every minute ("form not found") and kept the job from its missions
+                    if self._colony_gone(client, temp_city_id):
+                        self.log(jid, "info", f"Colonia temporaria {temp_city_id} ja nao e da conta; ciclo especial concluido")
+                        self._report_route(jid, str(inputs.get("_targeted_route_id") or ""), "done", "colônia já abandonada")
+                        cleaned = _clear_targeted_state(inputs)
+                        cleaned["last_targeted_cycle_at"] = int(time.time())
+                        self.save_game_client(game_account_id, client)
+                        return RunnerResult(
+                            success=True,
+                            reschedule_seconds=30,
+                            reschedule_inputs={**cleaned, **_state_inputs},
+                            data={"status": "targeted_cycle_complete", "temp_city_id": temp_city_id},
                         )
                     known_ids_set = {_to_int(x) for x in (inputs.get("_targeted_known_city_ids") or [])}
                     if known_ids_set and temp_city_id in known_ids_set:

@@ -315,3 +315,20 @@ class NoPlanColonyTests(unittest.TestCase):
         self.assertFalse(PIRACY_MODULE.PLAN_COLONY)
         self.assertIsNone(runner._out_of_reach("j", object(), {"route_id": "r1", "player_name": "Alvo"}, "ga"))
         self.assertEqual(reported, [("r1", "failed", "fora do alcance da fortaleza")])
+
+
+class ColonyGoneTests(unittest.TestCase):
+    """N-211 (22/11): the temporary colony abandoned by hand: the job no longer tries to abandon a town that is gone."""
+
+    def test_gone_only_when_the_list_was_read(self):
+        original = PIRACY_MODULE.fetch_owned_cities
+        try:
+            PIRACY_MODULE.fetch_owned_cities = lambda client: [{"id": "37430"}, {"id": "11"}]
+            self.assertTrue(PiracyMissionRunner._colony_gone(object(), 96517))
+            self.assertFalse(PiracyMissionRunner._colony_gone(object(), 37430))
+            PIRACY_MODULE.fetch_owned_cities = lambda client: []
+            self.assertFalse(PiracyMissionRunner._colony_gone(object(), 96517))      # nothing read: not gone
+            PIRACY_MODULE.fetch_owned_cities = lambda client: (_ for _ in ()).throw(RuntimeError("rede"))
+            self.assertFalse(PiracyMissionRunner._colony_gone(object(), 96517))
+        finally:
+            PIRACY_MODULE.fetch_owned_cities = original
