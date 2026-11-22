@@ -133,13 +133,15 @@ def overview(server_id: str) -> dict:
         snap = snapshots.get(ga.pk)
         base = (snap.base_snapshot or {}) if snap else {}
         highscore = base.get("piracy_highscore") or {}
-        own = highscore.get("self_entry") or {}
+        job = jobs.get(ga.pk)
+        inputs = _job_inputs(job) if job else {}
+        # the account's state can lose the ranking to another refresh: the Pirate Fortress job keeps its own reading
+        own = highscore.get("self_entry") or inputs.get("piracy_highscore_self") or {}
         left = _ranking_clock(highscore)
         if left is not None and (clock is None or (highscore.get("updated_at") or 0) > clock[1]):
             clock = (left, highscore.get("updated_at") or 0)
             ranking = list(highscore.get("entries") or [])
-        job = jobs.get(ga.pk)
-        inputs = _job_inputs(job) if job else {}
+
         alert = base.get("attack_alert_state") or {}
         incoming = [e for e in (alert.get("events") or []) if isinstance(e, dict) and is_pirate(e)]
         pirates = int(alert.get("pirate_count") or len(incoming)) if isinstance(alert, dict) else 0
