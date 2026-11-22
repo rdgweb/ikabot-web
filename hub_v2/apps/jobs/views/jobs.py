@@ -1863,6 +1863,28 @@ class JobListView(FilterSortListView):
                 "waiting_level": st.get("waiting_level")}
 
     @classmethod
+    def _piracy_plan(cls, job):
+        """N-211: with the account in the month's piracy plan, the agent follows the plan, not convert_mode: what it does."""
+        from apps.piracy import services as piracy
+
+        try:
+            plan = piracy.plan_for(job.game_account) if getattr(job, "game_account_id", None) else None
+        except Exception:
+            return None
+        if not plan:
+            return None
+        names = {"champion": "campeã", "passer": "passagem", "origin": "origem"}
+        if plan["convert_all"]:
+            text = "converte tudo e junta os pontos"
+        elif plan["final"] or not plan["share_percent"]:
+            text = "segura os pontos (fase final: não converte)"
+        else:
+            text = f"converte {plan['share_percent']}% a cada {plan['share_every_hours']}h"
+            if plan["crew_cap"] is not None:
+                text += f" até {plan['crew_cap']} de tripulação"
+        return {"role": names.get(plan["role"], plan["role"]), "text": text}
+
+    @classmethod
     def _piracy_display(cls, job):
         inputs = cls._parse_inputs(job)
         if int(job.action_code) != 17:
@@ -1932,6 +1954,7 @@ class JobListView(FilterSortListView):
                 _to_int(inputs.get("mission_level"), 7), f"Nv {inputs.get('mission_level', 7)}"
             ),
             "convert_mode_label": _CONVERT_MODE_LABELS.get(convert_mode, convert_mode),
+            "plan": cls._piracy_plan(job),
             "convert_percent": _to_int(inputs.get("convert_percent"), 100),
             "convert_threshold": _to_int(inputs.get("convert_threshold"), 0),
             "enable_targeted_cycle": bool(inputs.get("enable_targeted_cycle")),

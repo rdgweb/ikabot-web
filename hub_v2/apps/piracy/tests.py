@@ -394,3 +394,23 @@ class TurnResetTests(Base):
         PiracyMonth.objects.filter(pk=month.pk).update(turn_at=timezone.now() + timedelta(minutes=10))
         self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         self.assertFalse(PiracyRoute.objects.exists())
+
+
+class JobCardTests(Base):
+    """N-211 (22/11): the job card said "Converter tudo automaticamente" (the job's own mode) while the agent follows the
+    plan: in the plan the card says the account's part, read only (nothing drawn)."""
+
+    def test_card_shows_the_part_in_the_plan(self):
+        from apps.jobs.views.jobs import JobListView
+
+        month = self.plan()
+        roles = services.month_roles(month)
+        champion = next(ga for ga in self.accounts if roles.get(ga.pk) == "campeã")
+        holder = next(ga for ga in self.accounts if roles.get(ga.pk) in ("origem", "passagem"))
+        self.assertEqual(JobListView._piracy_plan(self.jobs[champion.pk])["text"], "converte tudo e junta os pontos")
+        shown = JobListView._piracy_plan(self.jobs[holder.pk])
+        self.assertEqual(shown["role"], roles[holder.pk])
+        self.assertTrue(shown["text"].startswith(f"converte {month.share_percent}% a cada {month.share_every_hours}h"))
+        self.assertFalse(PiracyRoute.objects.exists())                  # reading the card draws nothing
+        services.close_month(month)
+        self.assertIsNone(JobListView._piracy_plan(self.jobs[holder.pk]))

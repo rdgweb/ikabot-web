@@ -624,6 +624,32 @@ def _payload(route, info) -> dict:
             "target_name": route.target_name, **info}
 
 
+def plan_for(game_account, now: datetime | None = None) -> dict | None:
+    """The account's part in the month's plan now, read only (nothing drawn): None when it is in no running plan.
+    Champions convert all; the others hold their points, converting share_percent once every share_every_hours up to
+    crew_cap (in the final phase of the ranking nobody converts)."""
+    now = now or timezone.now()
+    member = (PiracyMember._base_manager.filter(game_account=game_account, month__status=PiracyMonth.OPEN,
+                                                 month__starts_at__lte=now, month__paused=False).select_related("month").first())
+    if member is None:
+        return None
+    month = member.month
+    now_members = members_now(month, now)
+    role = next((m.role for m in now_members if m.game_account_id == game_account.pk), member.role)
+    hold = role != PiracyMember.CHAMPION
+    out = {"member": member, "month": month, "members": now_members, "role": role, "hold": hold, "final": False,
+           "convert_all": not hold, "share_percent": month.share_percent if hold else 0,
+           "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None}
+    if hold:
+        crews = {m.game_account_id: strength(m.game_account)["crew"] for m in now_members if m.group == member.group}
+        mine_budget = budgets(month, crews).get(game_account.pk) or {}
+        out.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"))
+        # in the final phase of the ranking (the points count for the position at the turn) nobody converts
+        if _final_phase(game_account):
+            out.update(share_percent=0, crew_floor=None, final=True)
+    return out
+
+
 def next_for(game_account, now: datetime | None = None) -> dict:
     """What the Pirate Fortress job of this account does for the plan now:
     {"route": {...} | None, "hold": bool, "convert_all": bool, "share_percent": int, "share_every_hours": int}.
@@ -633,23 +659,11 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     capture points."""
     now = now or timezone.now()
     expire(now)
-    member = (PiracyMember._base_manager.filter(game_account=game_account, month__status=PiracyMonth.OPEN,
-                                                 month__starts_at__lte=now, month__paused=False).select_related("month").first())
-    if member is None:
+    plan = plan_for(game_account, now)
+    if plan is None:
         return {"route": None, "hold": False}
-    month = member.month
-    now_members = members_now(month, now)
-    role = next((m.role for m in now_members if m.game_account_id == game_account.pk), member.role)
-    hold = role != PiracyMember.CHAMPION
-    extra = {"convert_all": not hold, "share_percent": month.share_percent if hold else 0,
-             "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None}
-    if hold:
-        crews = {m.game_account_id: strength(m.game_account)["crew"] for m in now_members if m.group == member.group}
-        mine_budget = budgets(month, crews).get(game_account.pk) or {}
-        extra.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"))
-        # in the final phase of the ranking (the points count for the position at the turn) nobody converts
-        if _final_phase(game_account):
-            extra.update(share_percent=0, crew_floor=None)
+    member, month, now_members, role, hold = plan["member"], plan["month"], plan["members"], plan["role"], plan["hold"]
+    extra = {k: plan[k] for k in ("convert_all", "share_percent", "share_every_hours", "crew_cap", "crew_floor")}
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
                   .select_related("raider__account", "target__account", "outside").order_by("due_from").first())
     if open_route is not None:

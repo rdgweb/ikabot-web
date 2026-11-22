@@ -1151,7 +1151,7 @@
       {% endif %}
       <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted">
         <i class="bi bi-arrow-repeat"></i>
-        <span>{{ piracy_display.convert_mode_label }}{% if piracy_display.convert_mode_label == "Converter percentual" %} · {{ piracy_display.convert_percent }}%{% elif piracy_display.convert_mode_label == "Converter por limite" %} · {{ piracy_display.convert_threshold|intcomma }} pts{% endif %}</span>
+        {% if piracy_display.plan %}<span>Plano do mês · {{ piracy_display.plan.role }}: {{ piracy_display.plan.text }}</span>{% else %}<span>{{ piracy_display.convert_mode_label }}{% if piracy_display.convert_mode_label == "Converter percentual" %} · {{ piracy_display.convert_percent }}%{% elif piracy_display.convert_mode_label == "Converter por limite" %} · {{ piracy_display.convert_threshold|intcomma }} pts{% endif %}</span>{% endif %}
       </div>
     </div>
   </div>
