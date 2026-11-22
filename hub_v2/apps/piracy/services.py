@@ -482,8 +482,11 @@ def budgets(month, crews: dict) -> dict:
             cap = int(max(raider_crews) / ratio) if raider_crews else None
             floor = None
             if m.role == PiracyMember.PASSER:
-                theirs = [crews.get(o.pk) for o in origins if o.account_id != ga.account_id and crews.get(o.pk) is not None]
-                floor = int(max(theirs) * ratio) + 1 if theirs else None
+                # the crew to beat its origins — only the ones it can beat while its champion still beats it (cap wins)
+                needs = sorted(int(crews[o.pk] * ratio) + 1 for o in origins
+                               if o.account_id != ga.account_id and crews.get(o.pk) is not None)
+                within = [n for n in needs if cap is None or n <= cap]
+                floor = within[-1] if within else None
             out[ga.pk] = {"cap": cap, "floor": floor, "crew": crews.get(ga.pk)}
     return out
 

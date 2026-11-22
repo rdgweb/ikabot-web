@@ -309,3 +309,15 @@ class BudgetTests(Base):
         page = self.client.get("/pirataria/?server=s1-br").content.decode()
         self.assertIn("Próximos ataques", page)
         self.assertIn(timezone.localtime(route.due_from).strftime("%d/%m %H:%M"), page)
+
+
+class CapWinsTests(Base):
+    def test_a_passer_never_needs_more_crew_than_its_champion_beats(self):
+        month = self.plan()
+        champion_m = month.members.filter(role="champion").first()
+        crews = {ga.pk: 30000 for ga in self.accounts}
+        crews[champion_m.game_account_id] = 33000                             # beats ~28.7k at 95%
+        result = services.budgets(month, crews)
+        for m in month.members.filter(group=champion_m.group, role="passer"):
+            b = result[m.game_account_id]
+            self.assertTrue(b["floor"] is None or b["floor"] <= b["cap"])    # origins of 30k would need ~34.5k: left out
