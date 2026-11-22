@@ -337,3 +337,20 @@ class GroupingTests(Base):
         self.client.post("/pirataria/", {"action": "regroup", "server": "s1-br"})
         month = PiracyMonth.objects.get(status="open")
         self.assertEqual(sorted(month.champions.values_list("game_account_id", flat=True)), before)
+
+
+class RotationTests(Base):
+    def test_origins_and_passers_swap_every_turn_and_the_champions_stay(self):
+        month = self.plan()
+        first = {m.game_account_id: m.role for m in services.members_now(month)}
+        later = {m.game_account_id: m.role for m in services.members_now(month, month.starts_at + timedelta(days=7, minutes=1))}
+        champions = {k for k, v in first.items() if v == "champion"}
+        self.assertEqual(champions, {k for k, v in later.items() if v == "champion"})
+        self.assertNotEqual({k for k, v in first.items() if v == "passer"}, {k for k, v in later.items() if v == "passer"})
+        self.assertEqual(sum(1 for v in first.values() if v == "passer"), sum(1 for v in later.values() if v == "passer"))
+        seen = set()
+        for week in range(6):
+            now = month.starts_at + timedelta(days=7 * week, minutes=1)
+            seen |= {m.game_account_id for m in services.members_now(month, now) if m.role == "passer"}
+        others = {k for k, v in first.items() if v != "champion"}
+        self.assertEqual(seen, others)                                        # every account passes points on in turn

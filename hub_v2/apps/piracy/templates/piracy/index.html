@@ -115,6 +115,7 @@
       <span class="org-chip off">vitória ≥ {{ month.min_win_percent }}%</span>
       <span class="org-chip off">a partir de {{ month.min_points|intcomma }} pts, hora sorteada em 24h</span>
       <span class="org-chip off">as outras convertem {{ month.share_percent }}% a cada {{ month.share_every_hours }}h</span>
+      <span class="org-chip gold"><i class="bi bi-arrow-repeat"></i> origens e passagens trocam a cada {{ month.rotate_days }} dias · próxima troca {{ next_turn|date:"d/m H:i" }}</span>
     </div>
     {% if can_run %}
     <form method="post" class="pr-set" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
@@ -122,6 +123,7 @@
       <div><label>Vitória mín. (%)</label><input type="number" name="min_win_percent" min="50" max="100" value="{{ month.min_win_percent }}" class="form-input" style="width: 4.5rem;"></div>
       <div><label>Converter (%)</label><input type="number" name="share_percent" min="0" max="100" value="{{ month.share_percent }}" class="form-input" style="width: 4.5rem;"></div>
       <div><label>a cada (h)</label><input type="number" name="share_every_hours" min="1" max="240" value="{{ month.share_every_hours }}" class="form-input" style="width: 4.5rem;"></div>
+      <div><label>Trocar papéis (dias)</label><input type="number" name="rotate_days" min="1" max="30" value="{{ month.rotate_days }}" class="form-input" style="width: 4.5rem;"></div>
       <button class="btn btn-secondary btn-sm" name="action" value="share"><i class="bi bi-check2"></i> Salvar</button>
       <span style="margin-left: auto; display: flex; gap: .35rem;">
         {% if month.paused %}<button class="btn btn-primary btn-sm" name="action" value="resume"><i class="bi bi-play-fill"></i> Retomar</button>

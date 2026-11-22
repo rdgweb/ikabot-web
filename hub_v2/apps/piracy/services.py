@@ -191,10 +191,47 @@ def current_month(server_id: str):
     return PiracyMonth.objects.filter(server_id=server_id, status=PiracyMonth.OPEN).order_by("-starts_at").first()
 
 
+def rotation_index(month, now: datetime | None = None) -> int:
+    """Which turn of the role swap the month is in (0 before it starts)."""
+    now = now or timezone.now()
+    if now < month.starts_at:
+        return 0
+    return int((now - month.starts_at).total_seconds() // (max(1, month.rotate_days) * 86400))
+
+
+def next_rotation(month, now: datetime | None = None):
+    now = now or timezone.now()
+    return month.starts_at + timedelta(days=max(1, month.rotate_days) * (rotation_index(month, now) + 1))
+
+
+def members_now(month, now: datetime | None = None) -> list:
+    """The month's accounts with their role now: the champions stay; in each group the origins and passers swap turn by
+    turn (every rotate_days), as many passers as the group started with, so every account passes points on in turn."""
+    from types import SimpleNamespace
+
+    turn = rotation_index(month, now)
+    stored = list(month.members.select_related("game_account__account").order_by("group", "id"))
+    out = []
+    for group in sorted({m.group for m in stored}):
+        of = [m for m in stored if m.group == group]
+        for m in of:
+            if m.role == PiracyMember.CHAMPION:
+                out.append(SimpleNamespace(game_account=m.game_account, game_account_id=m.game_account_id, group=group,
+                                           role=PiracyMember.CHAMPION))
+        others = [m for m in of if m.role != PiracyMember.CHAMPION]
+        count = sum(1 for m in others if m.role == PiracyMember.PASSER)
+        shift = (turn * count) % len(others) if others and count else 0
+        turned = others[shift:] + others[:shift]
+        for index, m in enumerate(turned):
+            out.append(SimpleNamespace(game_account=m.game_account, game_account_id=m.game_account_id, group=group,
+                                       role=PiracyMember.PASSER if index < count else PiracyMember.ORIGIN))
+    return out
+
+
 def month_roles(month) -> dict:
-    """game account id -> "campeã" | "passagem" | "origem"."""
+    """game account id -> "campeã" | "passagem" | "origem" (now)."""
     names = {PiracyMember.CHAMPION: "campeã", PiracyMember.PASSER: "passagem", PiracyMember.ORIGIN: "origem"}
-    return {m.game_account_id: names[m.role] for m in month.members.all()}
+    return {m.game_account_id: names[m.role] for m in members_now(month)}
 
 
 def month_window(server_id: str, now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -353,7 +390,7 @@ def projection(month, rows_by_ga: dict) -> dict:
     (champion beats it) or through a passer (passer beats it, champion beats the passer) — each hop with at least the
     month's minimum chance, the better way counted."""
     out = {}
-    members = list(month.members.select_related("game_account"))
+    members = members_now(month)
     minimum = month.min_win_percent / 100
 
     def crew(ga):
@@ -489,7 +526,7 @@ def budgets(month, crews: dict) -> dict:
     it needs (floor: a passer beats its origins) — what decides how much it can convert. crews: game account id -> crew.
     The champion has neither (it converts all, and gathers in its final phase)."""
     ratio = ratio_for(month.min_win_percent)
-    members = list(month.members.select_related("game_account"))
+    members = members_now(month)
     out = {}
     for group in {m.group for m in members}:
         of = [m for m in members if m.group == group]
@@ -576,12 +613,13 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     if member is None:
         return {"route": None, "hold": False}
     month = member.month
-    hold = member.role != PiracyMember.CHAMPION
+    now_members = members_now(month, now)
+    role = next((m.role for m in now_members if m.game_account_id == game_account.pk), member.role)
+    hold = role != PiracyMember.CHAMPION
     extra = {"convert_all": not hold, "share_percent": month.share_percent if hold else 0,
              "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None}
     if hold:
-        crews = {m.game_account_id: strength(m.game_account)["crew"]
-                 for m in month.members.filter(group=member.group).select_related("game_account")}
+        crews = {m.game_account_id: strength(m.game_account)["crew"] for m in now_members if m.group == member.group}
         mine_budget = budgets(month, crews).get(game_account.pk) or {}
         extra.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"))
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
@@ -592,9 +630,9 @@ def next_for(game_account, now: datetime | None = None) -> dict:
         info = _target_info(open_route.target) if open_route.target_id else _outside_info(open_route.outside)
         if info:
             return {"route": _payload(open_route, info), "hold": hold, **extra}
-    if member.role == PiracyMember.ORIGIN:
+    if role == PiracyMember.ORIGIN:
         return {"route": None, "hold": hold, **extra}
-    level = PiracyMember.LEVEL[member.role]
+    level = PiracyMember.LEVEL[role]
     mine = strength(game_account)
     week = max(1, int((now - month.starts_at).total_seconds() // (7 * 86400)) + 1)
     recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
@@ -602,8 +640,7 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     taken = set(PiracyRoute._base_manager.filter(month=month, status__in=(PiracyRoute.PLANNED, PiracyRoute.SENT))
                 .values_list("target_id", flat=True))           # one raid on an account at a time
     candidates = []
-    for other in (PiracyMember._base_manager.filter(month=month, group=member.group)
-                  .exclude(game_account=game_account).select_related("game_account__account")):
+    for other in [m for m in now_members if m.group == member.group and m.game_account_id != game_account.pk]:
         ga = other.game_account
         if (PiracyMember.LEVEL[other.role] >= level or ga.account_id == game_account.account_id
                 or ga.pk in recent or ga.pk in taken):
@@ -621,12 +658,12 @@ def next_for(game_account, now: datetime | None = None) -> dict:
                                    target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
                                    due_from=when, due_until=when + timedelta(hours=ROUTE_HOURS))
         return {"route": None, "hold": hold, **extra}
-    return {"route": _outside_route(month, member, game_account, mine, now, week), "hold": hold, **extra}
+    return {"route": _outside_route(month, member, game_account, mine, now, week, role), "hold": hold, **extra}
 
 
-def _outside_route(month, member, game_account, mine, now, week) -> dict | None:
+def _outside_route(month, member, game_account, mine, now, week, role=None) -> dict | None:
     """A target added by hand, raided by a champion (the strongest crew) — not twice by the same one in 7 days."""
-    if member.role != PiracyMember.CHAMPION:
+    if (role or member.role) != PiracyMember.CHAMPION:
         return None
     recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
                  .exclude(status=PiracyRoute.SKIPPED).values_list("outside_id", flat=True))
