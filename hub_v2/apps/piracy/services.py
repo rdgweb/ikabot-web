@@ -315,6 +315,53 @@ def expire(now: datetime | None = None) -> int:
     return skipped
 
 
+# ── what a champion can gather ─────────────────────────────────────────────────────────────────────────────────────
+
+def projection(month, rows_by_ga: dict) -> dict:
+    """Per group: how many points the champion can gather this month from what the accounts hold now. A lost raid takes
+    nothing (only the pair's week), so each account adds its points x the chance they reach the champion: straight
+    (champion beats it) or through a passer (passer beats it, champion beats the passer) — each hop with at least the
+    month's minimum chance, the better way counted."""
+    out = {}
+    members = list(month.members.select_related("game_account"))
+    minimum = month.min_win_percent / 100
+
+    def crew(ga):
+        return (rows_by_ga.get(ga.pk) or {}).get("crew")
+
+    def points(ga):
+        return int((rows_by_ga.get(ga.pk) or {}).get("capture_points") or 0)
+
+    def chance(a, b):
+        if a.account_id == b.account_id:
+            return 0.0
+        value = win_chance(crew(a), crew(b))
+        return value if value is not None and value >= minimum - 1e-9 else 0.0
+
+    for group in sorted({m.group for m in members}):
+        of = [m for m in members if m.group == group]
+        champion = next((m.game_account for m in of if m.role == PiracyMember.CHAMPION), None)
+        if champion is None:
+            continue
+        passers = [m.game_account for m in of if m.role == PiracyMember.PASSER]
+        detail, expected, held = [], 0.0, 0
+        for m in of:
+            if m.role == PiracyMember.CHAMPION:
+                continue
+            ga = m.game_account
+            held += points(ga)
+            best, way = chance(champion, ga), "direto"
+            if m.role == PiracyMember.ORIGIN:
+                for passer in passers:
+                    via = chance(passer, ga) * chance(champion, passer)
+                    if via > best:
+                        best, way = via, f"por {passer.name}"
+            expected += points(ga) * best
+            detail.append({"ga": ga, "points": points(ga), "chance": round(best * 100), "way": way if best else "não alcança"})
+        out[group] = {"expected": int(expected), "held": held, "detail": sorted(detail, key=lambda d: -d["points"])}
+    return out
+
+
 # ── targets ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def search_targets(server_id: str, query: str, limit: int = 20) -> list[dict]:

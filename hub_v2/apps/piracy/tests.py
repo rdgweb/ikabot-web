@@ -255,3 +255,24 @@ class TargetSearchTests(Base):
         self.client.post("/pirataria/", {"action": "add_target", "server": "s1-br", "player_name": "Inimigo",
                                          "city_id": "5001", "island_id": "77"})
         self.assertEqual(PiracyTarget.objects.get().city_id, "5001")
+
+
+class ProjectionTests(Base):
+    def test_what_a_champion_can_gather(self):
+        month = self.plan()
+        champion_m = month.members.filter(role="champion").first()
+        champion = champion_m.game_account
+        self.set_strength(champion, points=0, crew=30000)                     # beats everyone (crew 1000) for sure
+        rows = {ga.pk: {"crew": 30000 if ga == champion else 1000, "capture_points": 0 if ga == champion else 15000}
+                for ga in self.accounts}
+        result = services.projection(month, rows)[champion_m.group]
+        others = month.members.filter(group=champion_m.group).exclude(role="champion").select_related("game_account")
+        reachable = [m for m in others if m.game_account.account_id != champion.account_id or m.role == "origin"]
+        self.assertGreater(result["expected"], 0)
+        self.assertLessEqual(result["expected"], result["held"])
+        self.assertEqual(result["held"], 15000 * others.count())
+        same_lobby = [d for d in result["detail"] if d["ga"].account_id == champion.account_id and d["way"] == "direto"]
+        for d in same_lobby:
+            self.assertEqual(d["chance"], 0)                                  # never straight from its own lobby
+        rows[champion.pk]["crew"] = 900                                       # weaker than all: gathers nothing
+        self.assertEqual(services.projection(month, rows)[champion_m.group]["expected"], 0)

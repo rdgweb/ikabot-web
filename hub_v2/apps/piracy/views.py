@@ -78,6 +78,7 @@ class PiracyView(LoginRequiredMixin, View):
             row["eligible"] = row["ga"].pk in able
             by_ga[row["ga"].pk] = row
         groups = []
+        projected = services.projection(month, by_ga) if month else {}
         if month:
             members = list(month.members.select_related("game_account__account"))
             for number in sorted({m.group for m in members}):
@@ -85,7 +86,8 @@ class PiracyView(LoginRequiredMixin, View):
                 pick = lambda role: [by_ga.get(m.game_account_id) or {"ga": m.game_account} for m in of if m.role == role]
                 champion = pick(PiracyMember.CHAMPION)
                 groups.append({"number": number, "champion": champion[0] if champion else None,
-                               "passers": pick(PiracyMember.PASSER), "origins": pick(PiracyMember.ORIGIN)})
+                               "passers": pick(PiracyMember.PASSER), "origins": pick(PiracyMember.ORIGIN),
+                               "projection": projected.get(number)})
         routes = (list(month.routes.select_related("raider", "target", "outside").order_by("-created_at")[:20]) if month else [])
         history = [{"month": past, "champions": [c.game_account for c in past.champions.all()]}
                    for past in PiracyMonth.objects.filter(server_id=server).prefetch_related("champions__game_account")[:12]]

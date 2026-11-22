@@ -92,12 +92,18 @@
         {% if g.champion %}
         <div class="pr-champ"><span class="crown"><i class="bi bi-trophy-fill"></i></span>
           <span style="min-width: 0;"><b>{{ g.champion.ga.name }}</b>
-            <span class="text-xs text-muted" style="display: block;">{{ g.champion.ga.account.label }} · trip. {{ g.champion.crew|default_if_none:"?"|intcomma }}</span></span></div>
+            <span class="text-xs text-muted" style="display: block;">{{ g.champion.ga.account.label }} · trip. {{ g.champion.crew|default_if_none:"?"|intcomma }}</span></span>
+          {% if g.projection %}<span style="margin-left: auto; text-align: right;" title="soma dos pontos de cada conta x a chance de chegarem à campeã (direto ou pela passagem)">
+            <span class="org-card-label" style="display: block;">pode juntar</span>
+            <b style="font-family: ui-monospace, monospace;">≈ {{ g.projection.expected|intcomma }}</b>
+            <span class="text-xs text-muted" style="display: block;">de {{ g.projection.held|intcomma }}</span></span>{% endif %}</div>
         {% endif %}
         {% if g.passers %}<p class="pr-stage">Passagens</p>
         <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span></span>{% endfor %}</div>{% endif %}
         {% if g.origins %}<p class="pr-stage">Origens</p>
         <div class="pr-chips">{% for r in g.origins %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span></span>{% endfor %}</div>{% endif %}
+        {% if g.projection %}<p class="pr-stage">Chega à campeã</p>
+        <div class="pr-chips">{% for d in g.projection.detail %}<span class="pr-chip" style="{% if not d.chance %}opacity: .55;{% endif %}"><b>{{ d.ga.name }} · {{ d.chance }}%</b><span>{{ d.way }}</span></span>{% endfor %}</div>{% endif %}
       </div>
       {% endfor %}
     </div>
