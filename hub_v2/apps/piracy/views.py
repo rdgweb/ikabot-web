@@ -4,6 +4,7 @@ from collections import Counter
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404
+from django.db import transaction
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views import View
@@ -129,28 +130,30 @@ class PiracyView(LoginRequiredMixin, View):
         action = request.POST.get("action", "")
         try:
             if action in ("plan", "choose", "regroup"):
-                champions = None
-                current = services.current_month(server)
-                if action == "regroup" and current:
-                    champions = [c.game_account for c in current.champions.select_related("game_account").order_by("group")]
-                    request.POST = request.POST.copy()
-                    for field in ("share_percent", "share_every_hours", "min_win_percent", "min_points"):
-                        request.POST[field] = str(getattr(current, field))
-                if action == "choose":
-                    ids = request.POST.getlist("champion")
-                    pool = {str(ga.pk): ga for ga in services.eligible(server)}
-                    champions = [pool[i] for i in ids if i in pool]
-                if action == "regroup" and current:
-                    services.close_month(current, "grupos refeitos")
-                    PiracyMonth.objects.filter(pk=current.pk).delete() if not current.routes.exclude(status="skipped").exists() else None
-                month = services.plan_month(request.organization, server, champions=champions,
-                                            share_percent=int(request.POST.get("share_percent") or 10),
-                                            share_every_hours=int(request.POST.get("share_every_hours") or 24),
-                                            min_win_percent=int(request.POST.get("min_win_percent") or 95),
-                                            min_points=int(request.POST.get("min_points") or 10000))
-                names = ", ".join(c.game_account.name for c in month.champions.select_related("game_account"))
-                record("piracy.month_planned", target=month, target_label=f"{server}: {names}")
-                messages.success(request, f"Campeãs do mês: {names}.")
+                # N-216: the old plan closes and the new one opens in one go (no moment with no plan at all)
+                with transaction.atomic():
+                    champions = None
+                    current = services.current_month(server)
+                    if action == "regroup" and current:
+                        champions = [c.game_account for c in current.champions.select_related("game_account").order_by("group")]
+                        request.POST = request.POST.copy()
+                        for field in ("share_percent", "share_every_hours", "min_win_percent", "min_points"):
+                            request.POST[field] = str(getattr(current, field))
+                    if action == "choose":
+                        ids = request.POST.getlist("champion")
+                        pool = {str(ga.pk): ga for ga in services.eligible(server)}
+                        champions = [pool[i] for i in ids if i in pool]
+                    if action == "regroup" and current:
+                        services.close_month(current, "grupos refeitos")
+                        PiracyMonth.objects.filter(pk=current.pk).delete() if not current.routes.exclude(status="skipped").exists() else None
+                    month = services.plan_month(request.organization, server, champions=champions,
+                                                share_percent=int(request.POST.get("share_percent") or 10),
+                                                share_every_hours=int(request.POST.get("share_every_hours") or 24),
+                                                min_win_percent=int(request.POST.get("min_win_percent") or 95),
+                                                min_points=int(request.POST.get("min_points") or 10000))
+                    names = ", ".join(c.game_account.name for c in month.champions.select_related("game_account"))
+                    record("piracy.month_planned", target=month, target_label=f"{server}: {names}")
+                    messages.success(request, f"Campeãs do mês: {names}.")
             elif action == "share":
                 month = services.current_month(server)
                 if month:

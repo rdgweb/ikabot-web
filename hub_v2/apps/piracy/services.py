@@ -743,10 +743,16 @@ def plan_for(game_account, now: datetime | None = None) -> dict | None:
     crew_cap (in the final phase of the ranking nobody converts)."""
     now = now or timezone.now()
     member = (PiracyMember._base_manager.filter(game_account=game_account, month__status=PiracyMonth.OPEN,
-                                                 month__starts_at__lte=now, month__paused=False).select_related("month").first())
+                                                 month__paused=False).select_related("month").order_by("month__starts_at").first())
     if member is None:
         return None
     month = member.month
+    if month.starts_at > now:
+        # N-216 (23/11): drawn but not started yet (the START_DELAY after a draw or a regroup): the account already
+        # belongs to the plan, so it keeps its points — before this it fell back to its job's own mode (convert all)
+        return {"member": member, "month": month, "members": [], "role": member.role, "hold": True, "final": False,
+                "waiting": True, "convert_all": False, "share_percent": 0, "share_every_hours": month.share_every_hours,
+                "crew_cap": None, "crew_floor": None}
     now_members = members_now(month, now)
     role = next((m.role for m in now_members if m.game_account_id == game_account.pk), member.role)
     hold = role != PiracyMember.CHAMPION
@@ -777,6 +783,8 @@ def next_for(game_account, now: datetime | None = None) -> dict:
         return {"route": None, "hold": False}
     member, month, now_members, role, hold = plan["member"], plan["month"], plan["members"], plan["role"], plan["hold"]
     extra = {k: plan[k] for k in ("convert_all", "share_percent", "share_every_hours", "crew_cap", "crew_floor")}
+    if plan.get("waiting"):
+        return {"route": None, "hold": True, **extra, "starts_at": int(month.starts_at.timestamp())}
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
                   .select_related("raider__account", "target__account", "outside").order_by("due_from").first())
     if open_route is not None:

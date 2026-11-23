@@ -1874,7 +1874,11 @@ class JobListView(FilterSortListView):
         if not plan:
             return None
         names = {"champion": "campeã", "passer": "passagem", "origin": "origem"}
-        if plan["convert_all"]:
+        if plan.get("waiting"):
+            from django.utils import timezone as _tz
+
+            text = f"plano começa {_tz.localtime(plan['month'].starts_at):%d/%m %H:%M}; segura os pontos até lá"
+        elif plan["convert_all"]:
             text = "converte tudo e junta os pontos"
         elif plan["final"] or not plan["share_percent"]:
             text = "segura os pontos (fase final: não converte)"

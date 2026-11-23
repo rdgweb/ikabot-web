@@ -257,7 +257,9 @@ class PiracyMissionRunner(BaseRunner):
         try:
             data = self.hub.get_piracy_next(game_account_id) or {}
         except Exception:
-            return empty
+            # N-216 (23/11): with no answer the account may well be in a plan: keep the points this round (converting
+            # by the job's own mode would spend what the plan keeps)
+            return {**empty, "hold": True, "unreachable": True}
         route = data.get("route") if isinstance(data.get("route"), dict) else None
         cap, floor = data.get("crew_cap"), data.get("crew_floor")
         return {"route": route, "hold": bool(data.get("hold")), "convert_all": bool(data.get("convert_all")),
@@ -1065,6 +1067,8 @@ class PiracyMissionRunner(BaseRunner):
                 _state_inputs.update(_plan_route_id="", _plan_points_before=0)
             # ...then how to convert: a champion all, the others keep their points and convert a share now and then
             plan = self._plan_next(game_account_id)
+            if plan.get("unreachable"):
+                self.log(jid, "warn", "Plano do mês: o hub não respondeu; não converto nesta rodada")
             if plan["convert_all"]:
                 # the champion converts all to grow its crew, and gathers the points in its final phase (for the ranking)
                 if final_left is None:

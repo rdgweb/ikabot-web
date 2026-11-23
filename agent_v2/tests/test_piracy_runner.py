@@ -224,7 +224,8 @@ class MonthPlanTests(unittest.TestCase):
 
         runner.hub.get_piracy_next = boom
         plan = runner._plan_next("ga")
-        self.assertEqual((plan["route"], plan["hold"], plan["convert_all"]), (None, False, False))
+        # N-216: no answer = keep the points this round (no raid, no conversion)
+        self.assertEqual((plan["route"], plan["hold"], plan["convert_all"], plan["share_percent"]), (None, True, False, 0))
 
     def test_direct_raid_from_the_fortress_or_none(self):
         runner = self._runner()
@@ -332,3 +333,19 @@ class ColonyGoneTests(unittest.TestCase):
             self.assertFalse(PiracyMissionRunner._colony_gone(object(), 96517))
         finally:
             PIRACY_MODULE.fetch_owned_cities = original
+
+
+class HubSilentTests(unittest.TestCase):
+    """N-216 (23/11): no answer from the hub = keep the points this round (never the job's own convert-all)."""
+
+    def test_no_answer_holds(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+
+        class Hub:
+            def get_piracy_next(self, game_account_id):
+                raise RuntimeError("hub fora")
+
+        runner.hub = Hub()
+        plan = runner._plan_next("ga")
+        self.assertEqual((plan["hold"], plan["convert_all"], plan["share_percent"], plan["crew_floor"], plan["route"]),
+                         (True, False, 0, None, None))

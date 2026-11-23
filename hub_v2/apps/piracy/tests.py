@@ -160,7 +160,9 @@ class PlanTests(Base):
         self.assertEqual(services.rotation_index(month, month.turn_at + timedelta(minutes=1)), 1)
         self.assertEqual(services.next_rotation(month, month.turn_at + timedelta(minutes=1)), month.turn_at + timedelta(days=7))
         origin = month.members.filter(role="origin").first().game_account
-        self.assertFalse(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["hold"])   # 15 minutes still
+        # N-216: in the 15 minutes before it starts the account already keeps its points (no conversion, no raid)
+        data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")
+        self.assertEqual((data["hold"], data["convert_all"], data["share_percent"], data["route"]), (True, False, 0, None))
 
 
 class EligibilityTests(Base):
@@ -475,3 +477,19 @@ class JobCardTests(Base):
         self.assertFalse(PiracyRoute.objects.exists())                  # reading the card draws nothing
         services.close_month(month)
         self.assertIsNone(JobListView._piracy_plan(self.jobs[holder.pk]))
+
+
+class RegroupGapTests(Base):
+    """N-216 (23/11): LordDarkness converted 17.626 points in the 15 minutes between a regroup and the new plan."""
+
+    def test_regroup_never_releases_the_accounts(self):
+        month = self.plan()
+        origin = month.members.filter(role="origin").first().game_account
+        self.client.post("/pirataria/", {"action": "regroup", "server": "s1-br"})
+        new = PiracyMonth.objects.get(status="open")
+        self.assertGreater(new.starts_at, timezone.now())                    # the new plan waits its 15 minutes
+        for ga in self.accounts:
+            data = self.agent(f"/api/agent/piracy/next/?game_account_id={ga.pk}")
+            self.assertTrue(data["hold"], ga.name)
+            self.assertEqual((data.get("convert_all"), data.get("share_percent"), data["route"]), (False, 0, None))
+        self.assertTrue(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["starts_at"])
