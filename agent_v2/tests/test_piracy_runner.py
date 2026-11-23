@@ -395,3 +395,15 @@ class CrewBonusConvertTests(unittest.TestCase):
 
     def test_the_conversion_time(self):
         self.assertEqual(PiracyMissionRunner._conversion_seconds({"conversion_time_base": 60, "conversion_time_per_unit": 3}, 100), 360)
+
+
+class ClearTargetedStateTests(unittest.TestCase):
+    """N-218 (23/11): the hub merges the rescheduled inputs: the special cycle's keys go empty, not left out."""
+
+    def test_keys_go_empty(self):
+        cleaned = PIRACY_MODULE._clear_targeted_state({"_targeted_phase": "wait_abandon", "_targeted_temp_city_id": 96517,
+                                                       "mission_level": 7})
+        self.assertEqual(cleaned, {"_targeted_phase": None, "_targeted_temp_city_id": None, "mission_level": 7})
+        merged = {"_targeted_phase": "wait_abandon", "_targeted_temp_city_id": 96517}
+        merged.update(cleaned)                                           # what the hub does with them
+        self.assertFalse(str(merged.get("_targeted_phase") or "").strip())

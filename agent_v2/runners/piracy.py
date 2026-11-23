@@ -78,10 +78,12 @@ def _to_bool(value: Any) -> bool:
 
 
 def _clear_targeted_state(inputs: dict[str, Any]) -> dict[str, Any]:
+    """The special cycle's keys emptied (N-218, 23/11: the hub MERGES the rescheduled inputs into the job's, so a key
+    left out kept its old value — Totem went back to "wait_abandon" every 30 s and never to its missions)."""
     cleaned = dict(inputs or {})
     for key in list(cleaned.keys()):
         if key.startswith("_targeted_"):
-            cleaned.pop(key, None)
+            cleaned[key] = None
     return cleaned
 
 
