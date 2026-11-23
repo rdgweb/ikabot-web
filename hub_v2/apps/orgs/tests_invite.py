@@ -82,3 +82,47 @@ class InviteTests(TestCase):
         self.assertIn("Saia da sua conta", response.content.decode())
         self.assertFalse(get_user_model().objects.filter(username="convidado").exists())
         self.assertEqual(default_organization().memberships.filter(user__username="convidado").count(), 0)
+
+
+from django.core import mail
+from django.test import override_settings
+
+
+@override_settings(EMAIL_READY=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class InviteMailTests(TestCase):
+    """N-219: "Convidar" on a request from the site sends the invitation by e-mail and closes the request."""
+
+    def setUp(self):
+        self.staff = get_user_model().objects.create_user("rodrigo", password="x", is_staff=True)
+        self.client.force_login(self.staff)
+
+    def test_inviting_a_request_sends_the_mail_and_closes_it(self):
+        from apps.website.models import InviteRequest
+
+        asked = InviteRequest.objects.create(email="novo@example.com", name="Liga Sul", language="pt")
+        self.client.post(reverse("invites"), {"request": str(asked.pk)})
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["novo@example.com"])
+        self.assertIn("/convite/", mail.outbox[0].body)
+        self.assertEqual(Invite.objects.get().organization_name, "Liga Sul")
+        asked.refresh_from_db()
+        self.assertIsNotNone(asked.handled_at)
+        page = self.client.get(reverse("invites")).content.decode()
+        self.assertIn("Convite enviado por e-mail", page)
+
+    def test_the_form_also_sends_and_english_for_other_languages(self):
+        from apps.website.models import InviteRequest
+
+        asked = InviteRequest.objects.create(email="friend@example.com", language="en")
+        self.client.post(reverse("invites"), {"request": str(asked.pk)})
+        self.assertIn("beta invitation", mail.outbox[0].subject)
+        self.assertEqual(Invite.objects.get().organization_name, "friend")      # no name: the e-mail's user part
+        self.client.post(reverse("invites"), {"email": "outro@example.com", "organization_name": "Org"})
+        self.assertEqual(len(mail.outbox), 2)
+
+    @override_settings(EMAIL_READY=False)
+    def test_without_mail_the_link_is_shown(self):
+        self.client.post(reverse("invites"), {"email": "outro@example.com", "organization_name": "Org"})
+        page = self.client.get(reverse("invites")).content.decode()
+        self.assertIn("O e-mail não saiu", page)
+        self.assertIn("/convite/", page)
