@@ -111,11 +111,9 @@ class PlanTests(Base):
         group = [m.game_account for m in month.members.filter(group=champion_m.group).exclude(pk=champion_m.pk)]
         self.set_strength(champion, points=0, crew=30000)
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
-        self.assertIsNone(data["route"])                                     # drawn for a time within the next day
         route = PiracyRoute.objects.select_related("target").get(raider=champion, status="planned")
-        self.assertLessEqual(route.due_from, timezone.now() + timedelta(hours=services.DRAW_HOURS, minutes=1))
-        PiracyRoute.objects.filter(pk=route.pk).update(due_from=timezone.now() - timedelta(minutes=1))
-        data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
+        # N-218: as soon as possible — the raid comes back in the same answer
+        self.assertLessEqual(route.due_from, timezone.now())
         self.assertEqual(data["route"]["route_id"], str(route.pk))
         self.assertIn(route.target, group)
         self.assertNotEqual(route.target.account_id, champion.account_id)
@@ -446,7 +444,7 @@ class TurnResetTests(Base):
         self.set_strength(champion, points=0, crew=30000)
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         route = PiracyRoute.objects.get(status="planned")
-        self.assertEqual(data["route_at"], int(route.due_from.timestamp()))   # the agent keeps the ship free for it
+        self.assertEqual(data["route"]["route_id"], str(route.pk))            # N-218: right away
         self.assertLessEqual(route.due_from, month.turn_at - services.TURN_MARGIN)
         self.assertLessEqual(route.due_until, month.turn_at)
         # too close to the turn: nothing is drawn (the points go back to 0)
@@ -522,3 +520,34 @@ class ChampionBalanceTests(Base):
         self.agent(f"/api/agent/piracy/next/?game_account_id={middle[0].pk}")
         self.assertTrue(PiracyRoute.objects.filter(raider=middle[0], target=target, status="planned").exists())
         self.assertEqual(services.champion_takes(month)[big[0].pk], 60000)
+
+
+class CrewBonusTests(Base):
+    """N-218: the held points add up to 1.400 of strength (from 7.000 points); raids as soon as possible; the list of
+    accounts waiting says who wins them."""
+
+    def test_the_bonus_and_what_to_convert(self):
+        self.assertEqual((services.crew_bonus(0), services.crew_bonus(3500), services.crew_bonus(7000), services.crew_bonus(40000)),
+                         (0, 700, 1400, 1400))
+        # base 100 with 20.000 points (strength 1.500): 2.000 needs 500 crew, i.e. 5.000 points
+        self.assertEqual(services.convert_for(100, 20000, 2000, None), 5000)
+        # with 8.000 points only 1.000 are above the limit: 1.700 cannot be reached by converting
+        self.assertIsNone(services.convert_for(100, 8000, 1700, None))
+        # the base limit stops it
+        self.assertIsNone(services.convert_for(100, 20000, 2000, 400))
+        self.assertEqual(services.convert_for(100, 20000, 1400, None), 0)
+
+    def test_waiting_accounts_say_who_wins_them(self):
+        big = [ga for ga in self.accounts if ga.account.label == "grande"]
+        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
+        month = self.plan(champions=[big[0], middle[0]])
+        self.set_strength(middle[0], points=0, crew=30000)
+        rows = {}
+        for ga in self.accounts:
+            s = services.strength(ga)
+            rows[ga.pk] = {"ga": ga, "crew": s["crew"], "capture_points": s["points"],
+                           "role": services.month_roles(month).get(ga.pk, "")}
+        waiting = services.upcoming(month, rows)["waiting"]
+        of_big = next(r for r in waiting if r["ga"] in big[1:])
+        self.assertIn(f"{middle[0].name} vence (100%)", of_big["why"])
+        self.assertNotIn("ninguém", of_big["why"])

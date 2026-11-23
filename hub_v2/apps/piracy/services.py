@@ -186,6 +186,8 @@ DRAW_HOURS = 24              # a raid of the plan happens at a random time withi
 START_DELAY = timedelta(minutes=15)   # the plan starts this long after it is drawn
 TURN_MARGIN = timedelta(minutes=30)   # the last raid before a ranking turn is drawn at least this long before it
 PAIR_DAYS = 3                # the same raider takes from the same account once in this many days (N-217: was 7)
+CREW_BONUS_MAX = 1400        # N-218: crew strength the held capture points add (the game's completeCrewPoints has it)
+CREW_BONUS_FULL = 7000       # points that give the whole bonus (Rodrigo); below it assumed proportional
 ROTATE_DAYS = 3              # N-217: passers and origins swap every this many days (the ranking runs 21 days)
 BALANCE_SHARE = 0.25         # N-217: a champion this far ahead of the other (share of its own take, at least
                              # min_points) leaves a target both can take to the other one
@@ -456,13 +458,37 @@ def expire(now: datetime | None = None) -> int:
 # ── what a champion can gather ─────────────────────────────────────────────────────────────────────────────────────
 
 def upcoming(month, rows_by_ga: dict) -> dict:
-    """The next raids of the plan (drawn times) and the accounts over the points limit still without a raider."""
+    """The next raids of the plan and the accounts over the points limit still without a raid — N-218: each with who
+    may take it and why it has not yet (raids are asked as soon as the raider's job runs)."""
     planned = list(month.routes.filter(status__in=(PiracyRoute.PLANNED, PiracyRoute.SENT))
                    .select_related("raider", "target", "outside").order_by("due_from"))
     busy = {r.target_id for r in planned if r.target_id}
-    waiting = [row for ga_id, row in rows_by_ga.items()
-               if (row.get("role") in ("passagem", "origem")) and (row.get("capture_points") or 0) >= month.min_points
-               and ga_id not in busy]
+    raiding = {r.raider_id for r in planned}
+    members = members_now(month)
+    level = {m.game_account_id: PiracyMember.LEVEL[m.role] for m in members}
+    group = {m.game_account_id: m.group for m in members}
+    waiting = []
+    for ga_id, row in rows_by_ga.items():
+        if row.get("role") not in ("passagem", "origem") or (row.get("capture_points") or 0) < month.min_points or ga_id in busy:
+            continue
+        ga = row["ga"]
+        best = None
+        for m in members:
+            raider = m.game_account
+            if (m.group != group.get(ga_id) or level[raider.pk] <= level.get(ga_id, 0)
+                    or raider.account_id == ga.account_id):
+                continue
+            chance = win_chance((rows_by_ga.get(raider.pk) or {}).get("crew"), row.get("crew"))
+            if chance is not None and (best is None or chance > best[1]):
+                best = (raider, chance)
+        if best is None:
+            row["why"] = "ninguém de outro lobby acima dela"
+        elif best[1] * 100 >= month.min_win_percent - 1e-9:
+            row["why"] = (f"{best[0].name} vence ({round(best[1] * 100)}%)"
+                          + (" · ocupada com outro roubo" if best[0].pk in raiding else " · rouba na próxima rodada dela"))
+        else:
+            row["why"] = f"melhor: {best[0].name} com {round(best[1] * 100)}% (precisa {month.min_win_percent}%)"
+        waiting.append(row)
     return {"planned": planned, "waiting": sorted(waiting, key=lambda r: -(r.get("capture_points") or 0))}
 
 
@@ -578,6 +604,28 @@ def strength(game_account) -> dict:
     return {"crew": int(crew) if crew is not None else None, "points": int(points) if points is not None else None}
 
 
+def crew_bonus(points: int | None) -> int:
+    """N-218: the crew strength the capture points held add — the game's total strength (completeCrewPoints) is the
+    base crew plus this. Converting points into crew takes it away; taking points in a raid brings it."""
+    held = max(0, int(points or 0))
+    return min(CREW_BONUS_MAX, held * CREW_BONUS_MAX // CREW_BONUS_FULL)
+
+
+def convert_for(base: int, points: int, floor: int | None, cap_base: int | None, factor: int = 10) -> int | None:
+    """N-218: the fewest points to convert so the strength (base + crew bought + bonus of the points left) reaches
+    floor, never taking the base above cap_base; 0 when already there, None when it cannot (each 10 points give 1 of
+    crew but, below CREW_BONUS_FULL, cost 2 of bonus: converting there only lowers the strength)."""
+    if floor is None:
+        return 0
+    factor = max(1, factor)
+    for crew in range(0, max(0, points) // factor + 1):
+        if cap_base is not None and base + crew > cap_base:
+            return None
+        if base + crew + crew_bonus(points - crew * factor) >= floor:
+            return crew * factor
+    return None
+
+
 def win_chance(raider_crew: int | None, target_crew: int | None) -> float | None:
     """The chance the raider wins: each side's crew gets an independent random -10%..+10%, the bigger wins.
     P(a(1+x) > b(1+y)) with x, y uniform — integrated over the target's crew (exact enough with 400 steps)."""
@@ -608,13 +656,22 @@ def ratio_for(min_percent: int) -> float:
     return high
 
 
-def budgets(month, crews: dict) -> dict:
+def budgets(month, crews: dict, points: dict | None = None) -> dict:
     """Per account of the month, the crew it may have (cap: its raider still wins with the month's chance) and the crew
     it needs (floor: a passer beats its origins) — what decides how much it can convert. crews: game account id -> crew.
     The champion has neither (it converts all, and gathers in its final phase)."""
     ratio = ratio_for(month.min_win_percent)
     members = members_now(month)
+    points = points or {}
     out = {}
+
+    def at_raid(ga):
+        """N-218: the strength of an account when it is raided — it holds min_points or more then."""
+        crew = crews.get(ga.pk)
+        if crew is None or ga.pk not in points:
+            return crew
+        held = points.get(ga.pk) or 0
+        return crew - crew_bonus(held) + crew_bonus(max(held, month.min_points))
     for group in {m.group for m in members}:
         of = [m for m in members if m.group == group]
         champions = [m.game_account for m in of if m.role == PiracyMember.CHAMPION]
@@ -636,11 +693,17 @@ def budgets(month, crews: dict) -> dict:
             floor = None
             if m.role == PiracyMember.PASSER:
                 # the crew to beat its origins — only the ones it can beat while its champion still beats it (cap wins)
-                needs = sorted(int(crews[o.pk] * ratio) + 1 for o in origins
-                               if o.account_id != ga.account_id and crews.get(o.pk) is not None)
+                needs = sorted(int(at_raid(o) * ratio) + 1 for o in origins
+                               if o.account_id != ga.account_id and at_raid(o) is not None)
                 within = [n for n in needs if cap is None or n <= cap]
                 floor = within[-1] if within else None
-            out[ga.pk] = {"cap": cap, "floor": floor, "crew": crews.get(ga.pk)}
+            # N-218: the base crew (strength without the bonus) it may reach: when raided it holds min_points or
+            # more, and a passer holds its origins' points — so the whole bonus counts on top of it
+            held = points.get(ga.pk)
+            bonus_then = CREW_BONUS_MAX if m.role == PiracyMember.PASSER else crew_bonus(max(held or 0, month.min_points))
+            cap_base = cap - bonus_then if cap is not None else None
+            base = crews.get(ga.pk) - crew_bonus(held) if crews.get(ga.pk) is not None and held is not None else None
+            out[ga.pk] = {"cap": cap, "floor": floor, "crew": crews.get(ga.pk), "cap_base": cap_base, "base": base}
     return out
 
 
@@ -716,11 +779,13 @@ def plan_for(game_account, now: datetime | None = None) -> dict | None:
     hold = role != PiracyMember.CHAMPION
     out = {"member": member, "month": month, "members": now_members, "role": role, "hold": hold, "final": False,
            "convert_all": not hold, "share_percent": month.share_percent if hold else 0,
-           "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None}
+           "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None, "base_cap": None,
+           "bonus_max": CREW_BONUS_MAX, "bonus_full": CREW_BONUS_FULL}
     if hold:
-        crews = {m.game_account_id: strength(m.game_account)["crew"] for m in now_members if m.group == member.group}
-        mine_budget = budgets(month, crews).get(game_account.pk) or {}
-        out.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"))
+        read = {m.game_account_id: strength(m.game_account) for m in now_members if m.group == member.group}
+        mine_budget = budgets(month, {k: v["crew"] for k, v in read.items()},
+                              {k: v["points"] for k, v in read.items() if v["points"] is not None}).get(game_account.pk) or {}
+        out.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"), base_cap=mine_budget.get("cap_base"))
         # in the final phase of the ranking (the points count for the position at the turn) nobody converts
         if _final_phase(game_account):
             out.update(share_percent=0, crew_floor=None, final=True)
@@ -740,7 +805,8 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     if plan is None:
         return {"route": None, "hold": False}
     member, month, now_members, role, hold = plan["member"], plan["month"], plan["members"], plan["role"], plan["hold"]
-    extra = {k: plan[k] for k in ("convert_all", "share_percent", "share_every_hours", "crew_cap", "crew_floor")}
+    extra = {k: plan.get(k) for k in ("convert_all", "share_percent", "share_every_hours", "crew_cap", "crew_floor",
+                                      "base_cap", "bonus_max", "bonus_full")}
     if plan.get("waiting"):
         return {"route": None, "hold": True, **extra, "starts_at": int(month.starts_at.timestamp())}
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
@@ -772,24 +838,22 @@ def next_for(game_account, now: datetime | None = None) -> dict:
         if role == PiracyMember.CHAMPION and _leave_to_other_champion(month, game_account, ga, theirs, now_members, member.group):
             continue
         candidates.append((theirs["points"], theirs["crew"], ga))
-    # a random time within the next day, so the raids of the plan have no pattern — but before the ranking turns:
-    # at the turn every account's capture points go back to 0, so a raid after it would take nothing
-    window_end = now + timedelta(hours=DRAW_HOURS)
-    if month.turn_at and now < month.turn_at:
-        window_end = min(window_end, month.turn_at - TURN_MARGIN)
-    if window_end <= now:
+    # N-218: as soon as possible (a time drawn within 24h left the points idle and open to others) — but never at or
+    # after the ranking turn: then every account's capture points go back to 0 and a raid takes nothing
+    if month.turn_at and now < month.turn_at and now >= month.turn_at - TURN_MARGIN:
         return {"route": None, "hold": hold, **extra}
     for points, crew, ga in sorted(candidates, key=lambda c: -c[0]):
         if not _target_info(ga):
             continue
-        when = now + timedelta(seconds=random.randint(0, int((window_end - now).total_seconds())))
+        when = now
         until = when + timedelta(hours=ROUTE_HOURS)
         if month.turn_at and now < month.turn_at:
             until = min(until, month.turn_at)
         PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
                                    target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
                                    due_from=when, due_until=until)
-        return {"route": None, "hold": hold, **extra, "route_at": int(when.timestamp())}
+        route = PiracyRoute._base_manager.filter(raider=game_account, target=ga, status=PiracyRoute.PLANNED).order_by("-created_at").first()
+        return {"route": _payload(route, _target_info(ga)), "hold": hold, **extra}
     return {"route": _outside_route(month, member, game_account, mine, now, week, role), "hold": hold, **extra}
 
 

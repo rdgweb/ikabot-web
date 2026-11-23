@@ -253,7 +253,7 @@ class PiracyMissionRunner(BaseRunner):
         organization, surely beaten, or a target added by hand), and how to convert: a champion converts all, the
         others keep their points and convert share_percent once every share_every_hours."""
         empty = {"route": None, "hold": False, "convert_all": False, "share_percent": 0, "share_every_hours": 24,
-                 "crew_cap": None, "crew_floor": None, "route_at": 0}
+                 "crew_cap": None, "crew_floor": None, "route_at": 0, "base_cap": None, "bonus_max": 0, "bonus_full": 0}
         try:
             data = self.hub.get_piracy_next(game_account_id) or {}
         except Exception:
@@ -267,7 +267,9 @@ class PiracyMissionRunner(BaseRunner):
                 "share_every_hours": max(1, _to_int(data.get("share_every_hours"), 24)),
                 "crew_cap": _to_int(cap) if cap is not None else None,
                 "crew_floor": _to_int(floor) if floor is not None else None,
-                "route_at": _to_int(data.get("route_at"), 0)}
+                "route_at": _to_int(data.get("route_at"), 0),
+                "base_cap": _to_int(data.get("base_cap")) if data.get("base_cap") is not None else None,
+                "bonus_max": max(0, _to_int(data.get("bonus_max"), 0)), "bonus_full": max(0, _to_int(data.get("bonus_full"), 0))}
 
     def _direct_raid(self, jid: str, client, city_id: str, route: dict[str, Any]) -> dict[str, Any] | None:
         """The raid straight from the fortress (the target within its reach); None when the game does not send it."""
@@ -293,33 +295,67 @@ class PiracyMissionRunner(BaseRunner):
             return {**raid, "ok": True, "time_remaining": left}
         return None
 
+    @staticmethod
+    def _bonus(points: int, plan: dict[str, Any]) -> int:
+        """N-218: the crew strength the capture points held add (the game's total strength has it); 0 unknown."""
+        top, full = plan.get("bonus_max") or 0, plan.get("bonus_full") or 0
+        if not top or not full:
+            return 0
+        return min(top, max(0, points) * top // full)
+
+    @staticmethod
+    def _conversion_seconds(state: dict[str, Any], crew: int) -> int:
+        """How long the game takes to turn that crew into strength (the points leave at once, the crew comes in)."""
+        return _to_int(state.get("conversion_time_base"), 0) + _to_int(state.get("conversion_time_per_unit"), 0) * max(0, crew)
+
     def _share_convert(self, jid: str, client, city_id: str, state: dict[str, Any], capture_points: int, percent: int,
-                       crew_cap: int | None = None) -> int:
+                       crew_cap: int | None = None, plan: dict[str, Any] | None = None) -> int:
         """The occasional conversion of an account that keeps its points for the champion — never above the crew the
-        hub allows it (its raider must still beat it). Returns the crew created."""
+        hub allows it (its raider must still beat it). N-218: counted on the base crew (strength without the bonus of
+        the points held), since when it is raided it holds points again. Returns the crew created."""
+        plan = plan or {}
         factor = max(1, _to_int(state.get("conversion_factor"), 10))
         crew = int(capture_points * percent / 100) // factor
-        if crew_cap is not None:
-            crew_now = _to_int(state.get("complete_crew_points"), 0)
-            crew = min(crew, max(0, crew_cap - crew_now))
+        base_cap = plan.get("base_cap")
+        complete = _to_int(state.get("complete_crew_points"), 0)
+        if base_cap is not None:
+            base = complete - self._bonus(capture_points, plan)
+            crew = min(crew, max(0, base_cap - base))
+        elif crew_cap is not None:
+            crew = min(crew, max(0, crew_cap - complete))
         if crew <= 0:
-            if crew_cap is not None:
+            if crew_cap is not None or base_cap is not None:
                 self.log(jid, "info", "Plano do mês: sem conversão — a tripulação já está no máximo para ser roubada pela campeã/passagem")
             return 0
         client.convert_piracy_points(city_id, crew)
         self.log(jid, "info", f"Plano do mês: convertidos {crew * factor} pontos em {crew} de tripulação; o resto fica para a campeã")
         return crew
 
-    def _floor_convert(self, jid: str, client, city_id: str, state: dict[str, Any], capture_points: int, crew_floor: int) -> int:
-        """A passer converts what it lacks to beat its origins."""
+    def _floor_convert(self, jid: str, client, city_id: str, state: dict[str, Any], capture_points: int, crew_floor: int,
+                       plan: dict[str, Any] | None = None) -> int:
+        """A passer converts what it lacks to beat its origins. N-218: each 10 points give 1 of crew but take the bonus
+        of the points away (below the bonus limit, 2 for every 1): the fewest points that reach the strength, never the
+        base above the hub's limit; when no amount reaches it, nothing."""
+        plan = plan or {}
         factor = max(1, _to_int(state.get("conversion_factor"), 10))
-        missing = crew_floor - _to_int(state.get("complete_crew_points"), 0)
-        crew = min(max(0, missing), capture_points // factor)
-        if crew <= 0:
+        complete = _to_int(state.get("complete_crew_points"), 0)
+        base = complete - self._bonus(capture_points, plan)
+        base_cap = plan.get("base_cap")
+        need = None
+        for crew in range(0, capture_points // factor + 1):
+            if base_cap is not None and base + crew > base_cap:
+                break
+            if base + crew + self._bonus(capture_points - crew * factor, plan) >= crew_floor:
+                need = crew
+                break
+        if not need:
+            if need is None:
+                self.log(jid, "info", f"Plano do mês: nem convertendo a tripulação chega a {crew_floor} para roubar as origens "
+                                      f"(converter abaixo de {plan.get('bonus_full') or 0} pontos tira bônus)")
             return 0
-        client.convert_piracy_points(city_id, crew)
-        self.log(jid, "info", f"Plano do mês: convertidos {crew * factor} pontos em {crew} de tripulação para conseguir roubar as origens")
-        return crew
+        client.convert_piracy_points(city_id, need)
+        self.log(jid, "info", f"Plano do mês: convertidos {need * factor} pontos em {need} de tripulação para conseguir roubar as origens")
+        return need
 
     def _report_route(self, jid: str, route_id: str, status: str, message: str = "") -> None:
         if not route_id:
@@ -861,6 +897,7 @@ class PiracyMissionRunner(BaseRunner):
                 "last_capture_points": capture_points,
                 "last_crew_points": crew_points,
                 "last_complete_crew_points": complete_crew_points,
+                "last_basic_crew_points": int(state.get("basic_crew_points") or 0),
                 "last_fortress_level": fortress_level,
                 "last_time_remaining": time_remaining,
                 "last_state_updated_at": int(time.time()),
@@ -1079,14 +1116,23 @@ class PiracyMissionRunner(BaseRunner):
             elif plan["hold"]:
                 convert_mode = "never"
                 try:
-                    if plan["crew_floor"] and _to_int(state.get("complete_crew_points"), 0) < plan["crew_floor"] and capture_points > 0:
-                        self._floor_convert(jid, client, city_id, state, capture_points, plan["crew_floor"])
+                    converting_until = _to_int(inputs.get("_plan_convert_until"), 0)
+                    created = 0
+                    if converting_until > now_ts:
+                        # N-218: the last conversion is still coming in (the strength read does not have it yet)
+                        self.log(jid, "info", f"Plano do mês: conversão anterior ainda em andamento "
+                                              f"({(converting_until - now_ts) // 60} min); não converto de novo")
+                    elif plan["crew_floor"] and _to_int(state.get("complete_crew_points"), 0) < plan["crew_floor"] and capture_points > 0:
+                        created = self._floor_convert(jid, client, city_id, state, capture_points, plan["crew_floor"], plan)
                     else:
                         last_share = _to_int(inputs.get("_plan_share_at"), 0)
                         if (plan["share_percent"] > 0 and capture_points > 0
                                 and now_ts - last_share >= plan["share_every_hours"] * 3600):
-                            self._share_convert(jid, client, city_id, state, capture_points, plan["share_percent"], plan["crew_cap"])
+                            created = self._share_convert(jid, client, city_id, state, capture_points, plan["share_percent"],
+                                                          plan["crew_cap"], plan)
                             _state_inputs["_plan_share_at"] = now_ts
+                    if created:
+                        _state_inputs["_plan_convert_until"] = now_ts + self._conversion_seconds(state, created)
                 except Exception as exc:
                     if self.is_network_error(exc):
                         raise

@@ -275,7 +275,8 @@ class MonthPlanConversionTests(unittest.TestCase):
         runner = self._runner()
         state = {"conversion_factor": 10, "complete_crew_points": 30000}
         self.assertEqual(runner._floor_convert("j", self.client, "1", state, 50000, 31000), 1000)
-        self.assertEqual(runner._floor_convert("j", self.client, "1", state, 5000, 31000), 500)     # only what it has
+        # N-218: what it has does not reach it: nothing (half a way does not raid, and it would only spend the points)
+        self.assertEqual(runner._floor_convert("j", self.client, "1", state, 5000, 31000), 0)
         self.assertEqual(runner._floor_convert("j", self.client, "1", state, 50000, 29000), 0)
 
 
@@ -349,3 +350,48 @@ class HubSilentTests(unittest.TestCase):
         plan = runner._plan_next("ga")
         self.assertEqual((plan["hold"], plan["convert_all"], plan["share_percent"], plan["crew_floor"], plan["route"]),
                          (True, False, 0, None, None))
+
+
+class CrewBonusConvertTests(unittest.TestCase):
+    """N-218: the held points add up to 1.400 of strength (7.000 points or more); converting takes it away."""
+
+    def _runner(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.logs = []
+        runner.log = lambda jid, level, text: runner.logs.append(text)
+        return runner
+
+    PLAN = {"bonus_max": 1400, "bonus_full": 7000, "base_cap": None}
+
+    def test_the_passer_converts_only_what_is_above_the_bonus_limit(self):
+        runner, converted = self._runner(), []
+
+        class Game:
+            def convert_piracy_points(self, city_id, crew):
+                converted.append(crew)
+
+        # 20.000 points (bonus 1.400) and base 100: strength 1.500; to reach 2.000 it needs 500 crew = 5.000 points
+        state = {"conversion_factor": 10, "complete_crew_points": 1500}
+        self.assertEqual(runner._floor_convert("j", Game(), "1", state, 20000, 2000, dict(self.PLAN)), 500)
+        self.assertEqual(converted, [500])
+        # 8.000 points: only 1.000 are above the limit (100 crew); below it each point converted lowers the strength
+        converted.clear()
+        state = {"conversion_factor": 10, "complete_crew_points": 1500}
+        self.assertEqual(runner._floor_convert("j", Game(), "1", state, 8000, 1700, dict(self.PLAN)), 0)
+        self.assertEqual(converted, [])
+        self.assertIn("nem convertendo", runner.logs[-1])
+
+    def test_the_share_never_takes_the_base_above_the_hub_limit(self):
+        runner, converted = self._runner(), []
+
+        class Game:
+            def convert_piracy_points(self, city_id, crew):
+                converted.append(crew)
+
+        state = {"conversion_factor": 10, "complete_crew_points": 1500}       # 20.000 points: base 100
+        plan = dict(self.PLAN, base_cap=150)
+        self.assertEqual(runner._share_convert("j", Game(), "1", state, 20000, 10, None, plan), 50)
+        self.assertEqual(converted, [50])
+
+    def test_the_conversion_time(self):
+        self.assertEqual(PiracyMissionRunner._conversion_seconds({"conversion_time_base": 60, "conversion_time_per_unit": 3}, 100), 360)

@@ -81,13 +81,19 @@ class PiracyView(LoginRequiredMixin, View):
             by_ga[row["ga"].pk] = row
         groups = []
         projected = services.projection(month, by_ga) if month else {}
-        budget = services.budgets(month, {pk: row.get("crew") for pk, row in by_ga.items()}) if month else {}
+        budget = services.budgets(month, {pk: row.get("crew") for pk, row in by_ga.items()},
+                                  {pk: row.get("capture_points") for pk, row in by_ga.items() if row.get("capture_points") is not None}) if month else {}
         for pk, row in by_ga.items():
             b = budget.get(pk) or {}
             crew, factor = row.get("crew"), 10
             row["cap"], row["floor"] = b.get("cap"), b.get("floor")
-            row["can_convert"] = max(0, (b["cap"] - crew) * factor) if b.get("cap") is not None and crew is not None else None
-            row["must_convert"] = max(0, (b["floor"] - crew) * factor) if b.get("floor") is not None and crew is not None else None
+            # N-218: on the base crew (strength without the bonus of the points held), the bonus loss counted
+            base, cap_base = b.get("base"), b.get("cap_base")
+            row["can_convert"] = max(0, (cap_base - base) * factor) if cap_base is not None and base is not None else None
+            need = (services.convert_for(base, int(row.get("capture_points") or 0), b["floor"], cap_base, factor)
+                    if b.get("floor") is not None and base is not None and crew is not None and crew < b["floor"] else 0)
+            row["must_convert"] = need
+            row["cannot_reach"] = b.get("floor") is not None and base is not None and crew is not None and crew < b["floor"] and need is None
         nxt = services.upcoming(month, by_ga) if month else {"planned": [], "waiting": []}
         if month:
             members = services.members_now(month)
@@ -119,7 +125,7 @@ class PiracyView(LoginRequiredMixin, View):
             "turn": services.rotation_index(month) + 1 if month else None, "next_turn": services.next_rotation(month) if month else None, "next_raids": nxt["planned"], "waiting": nxt["waiting"], "routes": routes, "history": history, "own_ranked": own_ranked,
             "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
             "marked": services.marked_targets(getattr(request, "organization", None), server) if server else [],
-            "can_run": _can_run(request), "base_template": _base(request), "now": timezone.now(), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1), "pair_days": services.PAIR_DAYS,
+            "can_run": _can_run(request), "base_template": _base(request), "now": timezone.now(), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1), "pair_days": services.PAIR_DAYS, "bonus_max": services.CREW_BONUS_MAX, "bonus_full": services.CREW_BONUS_FULL,
             "best_odds": _best_odds(data.get("rows", []), able),
         })
 

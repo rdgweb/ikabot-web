@@ -101,7 +101,7 @@
         {% endfor %}
         {% if g.passers %}<p class="pr-stage">Passagens</p>
         <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
-          {% if r.must_convert %}<span style="color: #9a6a17;">converter {{ r.must_convert|intcomma }} para roubar</span>{% elif r.can_convert is not None %}<span>pode converter {{ r.can_convert|intcomma }}</span>{% endif %}
+          {% if r.must_convert %}<span style="color: #9a6a17;">converter {{ r.must_convert|intcomma }} para roubar</span>{% elif r.cannot_reach %}<span style="color: #9c3526;">não alcança as origens nem convertendo</span>{% elif r.can_convert is not None %}<span>pode converter {{ r.can_convert|intcomma }}</span>{% endif %}
           {% if r.sources %}<span>pega de {{ r.sources }} orige{{ r.sources|pluralize:"m,ns" }}</span>{% elif r.sources is not None %}<span style="color: #9c3526;">sem origem de outro lobby</span>{% endif %}</span>{% endfor %}</div>{% endif %}
         {% if g.origins %}<p class="pr-stage">Origens</p>
         <div class="pr-chips">{% for r in g.origins %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
@@ -119,7 +119,8 @@
       <span class="org-chip off">mesmo par 1x em {{ pair_days }} dias</span>
       {% if groups|length == 1 and groups.0.champions|length > 1 %}<span class="org-chip off">campeã muito à frente deixa o alvo para a outra</span>{% endif %}
       <span class="org-chip off">vitória ≥ {{ month.min_win_percent }}%</span>
-      <span class="org-chip off">a partir de {{ month.min_points|intcomma }} pts, hora sorteada em 24h</span>
+      <span class="org-chip off">a partir de {{ month.min_points|intcomma }} pts, roubo assim que possível</span>
+      <span class="org-chip off">bônus de tripulação: até {{ bonus_max|intcomma }} com {{ bonus_full|intcomma }} pts guardados</span>
       <span class="org-chip off">as outras convertem {{ month.share_percent }}% a cada {{ month.share_every_hours }}h</span>
       <span class="org-chip gold"><i class="bi bi-arrow-repeat"></i> origens e passagens trocam {% if month.turn_at %}na virada do ranking e depois {% endif %}a cada {{ month.rotate_days }} dias · próxima troca {{ next_turn|date:"d/m H:i" }}</span>
     </div>
@@ -201,7 +202,7 @@
     {% for r in waiting %}
     <div class="pr-chip" style="flex-direction: row; align-items: center; gap: .55rem; opacity: .8;">
       <span class="org-chip off">aguardando</span>
-      <span style="min-width: 0;"><b>{{ r.ga.name }}</b><span style="display: block;">{{ r.capture_points|intcomma }} pts · ninguém do grupo vence ainda</span></span>
+      <span style="min-width: 0;"><b>{{ r.ga.name }}</b><span style="display: block;">{{ r.capture_points|intcomma }} pts · {{ r.why }}</span></span>
     </div>
     {% endfor %}
     {% if not next_raids and not waiting %}<p class="text-sm text-muted" style="margin: 0;">Nenhum: nenhuma conta passou de {{ month.min_points|intcomma }} pontos{% if month.starts_at > now %} e o plano começa {{ month.starts_at|date:"d/m H:i" }}{% endif %}.</p>{% endif %}
