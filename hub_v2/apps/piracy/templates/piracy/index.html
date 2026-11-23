@@ -101,10 +101,14 @@
         {% endif %}
         {% if g.passers %}<p class="pr-stage">Passagens</p>
         <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
-          {% if r.must_convert %}<span style="color: #9a6a17;">converter {{ r.must_convert|intcomma }} para roubar</span>{% elif r.can_convert is not None %}<span>pode converter {{ r.can_convert|intcomma }}</span>{% endif %}</span>{% endfor %}</div>{% endif %}
+          {% if r.must_convert %}<span style="color: #9a6a17;">converter {{ r.must_convert|intcomma }} para roubar</span>{% elif r.can_convert is not None %}<span>pode converter {{ r.can_convert|intcomma }}</span>{% endif %}
+          {% if r.sources %}<span>pega de {{ r.sources }} orige{{ r.sources|pluralize:"m,ns" }}</span>{% elif r.sources is not None %}<span style="color: #9c3526;">sem origem de outro lobby</span>{% endif %}</span>{% endfor %}</div>{% endif %}
         {% if g.origins %}<p class="pr-stage">Origens</p>
         <div class="pr-chips">{% for r in g.origins %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
-          {% if r.can_convert is not None %}<span{% if not r.can_convert %} style="color: #9c3526;"{% endif %}>{% if r.can_convert %}pode converter {{ r.can_convert|intcomma }}{% else %}forte demais: não converter{% endif %}</span>{% endif %}</span>{% endfor %}</div>{% endif %}
+          {% if r.can_convert is not None %}<span{% if not r.can_convert %} style="color: #9c3526;"{% endif %}>{% if r.can_convert %}pode converter {{ r.can_convert|intcomma }}{% else %}forte demais: não converter{% endif %}</span>{% endif %}
+          {% if r.takers %}<span>→ {{ r.takers|join:", " }}</span>{% elif r.takers is not None %}<span style="color: #9c3526;">ninguém de outro lobby pega</span>{% endif %}</span>{% endfor %}</div>{% endif %}
+        {% if g.blocked or g.idle or g.wrong %}<p class="text-xs" style="color: #9c3526; margin: .35rem 0 0;"><i class="bi bi-exclamation-triangle"></i>
+          {% if g.wrong %}passagem do lobby da campeã: {{ g.wrong|join:", " }}. {% endif %}{% if g.blocked %}sem quem pegue os pontos (mesmo lobby): {{ g.blocked|join:", " }}. {% endif %}{% if g.idle %}passagem sem origem de outro lobby: {{ g.idle|join:", " }}. {% endif %}Refazer grupos corrige.</p>{% endif %}
         {% if g.projection %}<p class="pr-stage">Chega à campeã</p>
         <div class="pr-chips">{% for d in g.projection.detail %}<span class="pr-chip" style="{% if not d.chance %}opacity: .55;{% endif %}"><b>{{ d.ga.name }} · {{ d.chance }}%</b><span>{{ d.way }}</span></span>{% endfor %}</div>{% endif %}
       </div>

@@ -331,13 +331,65 @@ class CapWinsTests(Base):
             self.assertTrue(b["floor"] is None or b["floor"] <= b["cap"])    # origins of 30k would need ~34.5k: left out
 
 
-class GroupingTests(Base):
-    def test_no_account_in_the_group_of_a_champion_of_its_lobby(self):
-        for seed in range(6):
+class ChainChecks:
+    """N-215: origin -> passer -> champion, and one lobby never raids itself: the whole chain closes by lobby."""
+
+    def groups_now(self, month, now=None):
+        members = services.members_now(month, now)
+        out = {}
+        for m in members:
+            g = out.setdefault(m.group, {"champion": None, "passer": [], "origin": []})
+            if m.role == "champion":
+                g["champion"] = m.game_account
+            else:
+                g[m.role].append(m.game_account)
+        return out
+
+    def assert_chain_closes(self, month, now=None):
+        for number, g in self.groups_now(month, now).items():
+            links = services.chain(g["champion"], g["passer"], g["origin"])
+            self.assertEqual(links["wrong"], [], f"grupo {number}: passagem do lobby da campeã")
+            self.assertEqual(links["blocked"], [], f"grupo {number}: origem sem ninguém de outro lobby")
+            self.assertEqual(links["idle"], [], f"grupo {number}: passagem sem origem de outro lobby")
+
+
+class GroupingTests(ChainChecks, Base):
+    def test_the_chain_closes_by_lobby_for_any_draw(self):
+        for seed in range(8):
             month = self.plan(seed=seed)
-            champions = {m.group: m.game_account for m in month.members.filter(role="champion").select_related("game_account")}
-            for m in month.members.exclude(role="champion").select_related("game_account"):
-                self.assertNotEqual(m.game_account.account_id, champions[m.group].account_id)
+            self.assertEqual(month.members.count(), len(self.accounts))
+            self.assert_chain_closes(month)
+
+    def test_the_big_lobby_feeds_the_others(self):
+        # as on s78: champions of the big lobby (6) and of the middle one (3); the small one (1) is the only third lobby
+        big = [ga for ga in self.accounts if ga.account.label == "grande"]
+        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
+        month = self.plan(champions=[big[0], middle[0]])
+        self.assert_chain_closes(month)
+        groups = self.groups_now(month)
+        of_big = next(g for g in groups.values() if g["champion"] == big[0])
+        self.assertTrue(of_big["passer"])
+        self.assertTrue(all(p.account.label != "grande" for p in of_big["passer"]))
+        # the big lobby's own accounts may be origins there: a passer of another lobby takes their points
+        self.assertTrue(any(o.account.label == "grande" for o in of_big["origin"]))
+
+    def test_a_passer_amid_origins_of_its_lobby_is_shown_as_blocked(self):
+        big = [ga for ga in self.accounts if ga.account.label == "grande"]
+        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
+        links = services.chain(middle[0], [big[0]], big[1:4])            # the Totem case of 22/11
+        self.assertEqual(links["idle"], [big[0]])
+        self.assertEqual(links["blocked"], [])                           # the champion takes them straight
+        links = services.chain(big[0], [big[1]], big[2:4])
+        self.assertEqual((links["wrong"], links["blocked"]), ([big[1]], big[2:4]))
+        month = self.plan(champions=[big[0], middle[0]])
+        group = month.members.get(role="champion", game_account=middle[0]).group
+        month.members.exclude(role="champion").delete()                  # the plan as it was: a passer amid its lobby
+        month.members.create(game_account=big[1], role="passer", group=group)
+        for ga in big[2:4]:
+            month.members.create(game_account=ga, role="origin", group=group)
+        page = self.client.get("/pirataria/?server=s1-br").content.decode()
+        self.assertIn("sem origem de outro lobby", page)
+        self.assertIn("Refazer grupos corrige", page)
 
     def test_regroup_keeps_the_champions(self):
         month = self.plan()
@@ -347,21 +399,30 @@ class GroupingTests(Base):
         self.assertEqual(sorted(month.champions.values_list("game_account_id", flat=True)), before)
 
 
-class RotationTests(Base):
-    def test_origins_and_passers_swap_every_turn_and_the_champions_stay(self):
-        month = self.plan()
+class RotationTests(ChainChecks, Base):
+    def test_the_passers_change_every_turn_and_the_chain_still_closes(self):
+        big = [ga for ga in self.accounts if ga.account.label == "grande"]
+        small = [ga for ga in self.accounts if ga.account.label == "pequeno"]
+        month = self.plan(champions=[big[0], small[0]])
         first = {m.game_account_id: m.role for m in services.members_now(month)}
-        later = {m.game_account_id: m.role for m in services.members_now(month, month.starts_at + timedelta(days=7, minutes=1))}
         champions = {k for k, v in first.items() if v == "champion"}
-        self.assertEqual(champions, {k for k, v in later.items() if v == "champion"})
-        self.assertNotEqual({k for k, v in first.items() if v == "passer"}, {k for k, v in later.items() if v == "passer"})
-        self.assertEqual(sum(1 for v in first.values() if v == "passer"), sum(1 for v in later.values() if v == "passer"))
-        seen = set()
+        seen, passers_by_week = set(), []
         for week in range(6):
             now = month.starts_at + timedelta(days=7 * week, minutes=1)
-            seen |= {m.game_account_id for m in services.members_now(month, now) if m.role == "passer"}
-        others = {k for k, v in first.items() if v != "champion"}
-        self.assertEqual(seen, others)                                        # every account passes points on in turn
+            roles = {m.game_account_id: m.role for m in services.members_now(month, now)}
+            self.assertEqual({k for k, v in roles.items() if v == "champion"}, champions)
+            self.assertEqual(sum(1 for v in roles.values() if v == "passer"), sum(1 for v in first.values() if v == "passer"))
+            self.assert_chain_closes(month, now)
+            passers_by_week.append({k for k, v in roles.items() if v == "passer"})
+            seen |= passers_by_week[-1]
+        self.assertNotEqual(passers_by_week[0], passers_by_week[1])         # the roles do swap
+        self.assertGreater(len(seen), len(passers_by_week[0]))              # more accounts get to pass points on
+        for week in passers_by_week:                                        # never a passer of its champion's lobby
+            for pk in week:
+                ga = next(ga for ga in self.accounts if ga.pk == pk)
+                group = next(m.group for m in services.members_now(month) if m.game_account_id == pk)
+                champion = next(m.game_account for m in services.members_now(month) if m.group == group and m.role == "champion")
+                self.assertNotEqual(ga.account_id, champion.account_id)
 
 
 class FinalPhaseTests(Base):

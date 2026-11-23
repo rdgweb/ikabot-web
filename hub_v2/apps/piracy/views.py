@@ -94,9 +94,18 @@ class PiracyView(LoginRequiredMixin, View):
                 of = [m for m in members if m.group == number]
                 pick = lambda role: [by_ga.get(m.game_account_id) or {"ga": m.game_account} for m in of if m.role == role]
                 champion = pick(PiracyMember.CHAMPION)
+                passers, origins = pick(PiracyMember.PASSER), pick(PiracyMember.ORIGIN)
+                # N-215: who may take whose points, by lobby (the game never lets one lobby raid itself)
+                links = services.chain(champion[0]["ga"] if champion else None, [r["ga"] for r in passers],
+                                       [r["ga"] for r in origins])
+                for r in origins:
+                    r["takers"] = [t.name for t in links["takers"][r["ga"].pk]]
+                for r in passers:
+                    r["sources"] = len(links["sources"][r["ga"].pk])
                 groups.append({"number": number, "champion": champion[0] if champion else None,
-                               "passers": pick(PiracyMember.PASSER), "origins": pick(PiracyMember.ORIGIN),
-                               "projection": projected.get(number)})
+                               "passers": passers, "origins": origins, "projection": projected.get(number),
+                               "blocked": [ga.name for ga in links["blocked"]], "idle": [ga.name for ga in links["idle"]],
+                               "wrong": [ga.name for ga in links["wrong"]]})
         routes = (list(month.routes.select_related("raider", "target", "outside").order_by("-created_at")[:20]) if month else [])
         history = [{"month": past, "champions": [c.game_account for c in past.champions.all()]}
                    for past in PiracyMonth.objects.filter(server_id=server).prefetch_related("champions__game_account")[:12]]

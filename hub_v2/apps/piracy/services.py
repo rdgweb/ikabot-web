@@ -218,8 +218,10 @@ def next_rotation(month, now: datetime | None = None):
 
 
 def members_now(month, now: datetime | None = None) -> list:
-    """The month's accounts with their role now: the champions stay; in each group the origins and passers swap turn by
-    turn (every rotate_days), as many passers as the group started with, so every account passes points on in turn."""
+    """The month's accounts with their role now: the champions stay; in each group the passers change turn by turn
+    (every rotate_days), as many as the group started with. N-215: each turn picks the passers among the accounts that
+    may pass points on in that group (never of the champion's lobby), so that every origin keeps someone of another
+    lobby to take its points, giving the turn to who passed the least; with no such choice the passers stay."""
     from types import SimpleNamespace
 
     turn = rotation_index(month, now)
@@ -227,18 +229,67 @@ def members_now(month, now: datetime | None = None) -> list:
     out = []
     for group in sorted({m.group for m in stored}):
         of = [m for m in stored if m.group == group]
-        for m in of:
-            if m.role == PiracyMember.CHAMPION:
-                out.append(SimpleNamespace(game_account=m.game_account, game_account_id=m.game_account_id, group=group,
-                                           role=PiracyMember.CHAMPION))
-        others = [m for m in of if m.role != PiracyMember.CHAMPION]
-        count = sum(1 for m in others if m.role == PiracyMember.PASSER)
-        shift = (turn * count) % len(others) if others and count else 0
-        turned = others[shift:] + others[:shift]
-        for index, m in enumerate(turned):
-            out.append(SimpleNamespace(game_account=m.game_account, game_account_id=m.game_account_id, group=group,
-                                       role=PiracyMember.PASSER if index < count else PiracyMember.ORIGIN))
+        champion = next((m.game_account for m in of if m.role == PiracyMember.CHAMPION), None)
+        if champion is not None:
+            out.append(SimpleNamespace(game_account=champion, game_account_id=champion.pk, group=group,
+                                       role=PiracyMember.CHAMPION))
+        others = [m.game_account for m in of if m.role != PiracyMember.CHAMPION]
+        passers = [m.game_account for m in of if m.role == PiracyMember.PASSER]
+        counts = {ga.pk: (1 if ga in passers else 0) for ga in others}
+        for _ in range(turn):
+            passers = _next_passers(champion, others, passers, counts)
+            for ga in passers:
+                counts[ga.pk] += 1
+        chosen = {ga.pk for ga in passers}
+        for ga in others:
+            out.append(SimpleNamespace(game_account=ga, game_account_id=ga.pk, group=group,
+                                       role=PiracyMember.PASSER if ga.pk in chosen else PiracyMember.ORIGIN))
     return out
+
+
+def _next_passers(champion, others: list, current: list, counts: dict) -> list:
+    """The passers of the next turn of one group (see members_now); counts: turns each account has passed so far."""
+    from itertools import combinations
+
+    if not current:
+        return []
+    able = [ga for ga in others if champion is None or ga.account_id != champion.account_id]
+    size = min(len(current), len(able))
+    if not size:
+        return current
+    now_ids = {ga.pk for ga in current}
+
+    def key(combo):
+        ids = {ga.pk for ga in combo}
+        links = chain(champion, list(combo), [ga for ga in others if ga.pk not in ids])
+        served = sum(1 for o in others if o.pk not in ids and any(t.pk in ids for t in links["takers"].get(o.pk, [])))
+        return (len(links["blocked"]), len(links["idle"]), sum(counts.get(ga.pk, 0) for ga in combo), ids == now_ids,
+                -served, sorted(str(ga.pk) for ga in combo))
+
+    options = list(combinations(sorted(able, key=lambda ga: (ga.name or "", str(ga.pk))), size))[:2000]
+    best = min(options, key=key)
+    if len(chain(champion, list(best), [ga for ga in others if ga not in best])["blocked"]) > \
+            len(chain(champion, current, [ga for ga in others if ga not in current])["blocked"]):
+        return current                                   # no choice keeps every origin reachable: the passers stay
+    return list(best)
+
+
+def chain(champion, passers: list, origins: list) -> dict:
+    """N-215: who may take whose points in a group, by lobby alone (the game never lets two accounts of one lobby raid
+    each other). takers[origin pk]: the passers of another lobby, plus the champion when of another lobby;
+    sources[passer pk]: the origins of another lobby. blocked: origins nobody may take; idle: passers with no origin
+    to take from; wrong: passers of the champion's lobby (the champion could never take theirs)."""
+    takers = {}
+    for o in origins:
+        t = [p for p in passers if p.account_id != o.account_id]
+        if champion is not None and champion.account_id != o.account_id:
+            t.append(champion)
+        takers[o.pk] = t
+    sources = {p.pk: [o for o in origins if o.account_id != p.account_id] for p in passers}
+    return {"takers": takers, "sources": sources,
+            "blocked": [o for o in origins if not takers[o.pk]],
+            "idle": [p for p in passers if not sources[p.pk]],
+            "wrong": [p for p in passers if champion is not None and p.account_id == champion.account_id]}
 
 
 def month_roles(month) -> dict:
@@ -296,40 +347,102 @@ def pick_champions(accounts: list, server_id: str, rng: random.Random | None = N
     return chosen
 
 
-def build_groups(accounts: list, champions: list, crews: dict | None = None) -> list[dict]:
-    """Split the other accounts between the champions. An account never goes to a champion of its own lobby: it goes to
-    the champion of another lobby that beats it with the best chance (by crew), keeping the groups balanced. Inside a
-    group, passers are the accounts of lobbies other than the champion's that the champion beats best (small lobbies
-    first among equals), origins the rest."""
-    crews = crews or {}
-    lobby_size = defaultdict(int)
-    for ga in accounts:
-        lobby_size[ga.account_id] += 1
-    groups = [{"champion": c, "members": [], "passers": [], "origins": []} for c in champions]
+def _pair_move(others, options, place, score, current):
+    """The first change of two accounts at once that makes the split better: ([(ga, option), (ga, option)], score)."""
+    for x, a in enumerate(others):
+        for b in others[x + 1:]:
+            before = (place[a.pk], place[b.pk])
+            for option_a in options:
+                for option_b in options:
+                    if (option_a, option_b) == before or PiracyMember.PASSER not in (option_a[1], option_b[1]):
+                        continue
+                    place[a.pk], place[b.pk] = option_a, option_b
+                    value = score(place)
+                    place[a.pk], place[b.pk] = before
+                    if value > current + 1e-9:
+                        return [(a, option_a), (b, option_b)], value
+    return None
 
-    def odds(champion, ga):
-        value = win_chance(crews.get(champion.pk), crews.get(ga.pk))
+
+def build_groups(accounts: list, champions: list, crews: dict | None = None) -> list[dict]:
+    """Split the other accounts between the champions (N-215). The points go origin -> passer -> champion and the game
+    never lets two accounts of one lobby raid each other, so: a passer is never of its champion's lobby, every origin
+    has someone of another lobby to take its points (a passer, or the champion itself), every passer has an origin of
+    another lobby to take from. An account of the champion's lobby may be an origin there when a passer of another
+    lobby takes its points. Among the splits that respect that, the groups stay balanced and the champion beats its
+    passers (by crew) with the best chance."""
+    crews = crews or {}
+    others = sorted([ga for ga in accounts if ga not in champions], key=lambda ga: (ga.name or "", str(ga.pk)))
+    if not champions:
+        return []
+
+    def odds(a, b):
+        value = win_chance(crews.get(a.pk), crews.get(b.pk))
         return value if value is not None else 0.5
 
-    others = [ga for ga in accounts if ga not in champions]
-    # the accounts that only one champion may take first, then the rest by how strong they are
-    others.sort(key=lambda ga: (sum(1 for g in groups if g["champion"].account_id != ga.account_id), -(crews.get(ga.pk) or 0)))
-    size = math.ceil(len(others) / max(1, len(groups)))
+    def score(place: dict) -> float:
+        total, sizes = 0.0, []
+        for index, champion in enumerate(champions):
+            passers = [ga for ga in others if place[ga.pk] == (index, PiracyMember.PASSER)]
+            origins = [ga for ga in others if place[ga.pk] == (index, PiracyMember.ORIGIN)]
+            links = chain(champion, passers, origins)
+            total -= 1000 * len(links["wrong"]) + 100 * len(links["blocked"]) + 20 * len(links["idle"])
+            if len(passers) > PASSERS_PER_GROUP:
+                total -= 50 * (len(passers) - PASSERS_PER_GROUP)
+            # the plan wants passers (origins and passers take turns): each one that has origins to take from counts
+            total += 15 * min(PASSERS_PER_GROUP, len(passers) - len(links["idle"]))
+            # ...but not more passers than origins they serve (three passers living off one origin is no chain)
+            served = sum(1 for o in origins if any(t is not champion for t in links["takers"][o.pk]))
+            total -= 25 * max(0, len(passers) - served)
+            # ...and the roles take turns: one account that may pass but waits its turn is worth more than one more passer
+            able = sum(1 for ga in passers + origins if ga.account_id != champion.account_id)
+            if passers and able > len(passers):
+                total += 20
+            total += 5 * sum(odds(champion, p) for p in passers)
+            for o in origins:
+                ways = [odds(t, o) * (1 if t is champion else odds(champion, t)) for t in links["takers"][o.pk]]
+                total += 3 * max(ways, default=0)
+            sizes.append(len(passers) + len(origins))
+        return total - 4 * (max(sizes) - min(sizes))
+
+    # start: each account with a champion of another lobby (fewest members first), all as origins; then improve one
+    # account at a time while the split gets better
+    place, filled = {}, [0] * len(champions)
     for ga in others:
-        fit = [g for g in groups if g["champion"].account_id != ga.account_id]
-        if not fit:
-            continue                                   # every champion is of its lobby: it stays out this month
-        roomy = [g for g in fit if len(g["members"]) < size] or fit
-        max(roomy, key=lambda g: (odds(g["champion"], ga), -len(g["members"])))["members"].append(ga)
-    for group in groups:
-        champion = group["champion"]
-        ranked = sorted(group["members"], key=lambda ga: (-odds(champion, ga), lobby_size[ga.account_id], ga.name or ""))
-        passers = []
-        for ga in ranked:                              # passers from as many lobbies as possible
-            if len(passers) < PASSERS_PER_GROUP and all(ga.account_id != p.account_id for p in passers):
-                passers.append(ga)
-        group["passers"] = passers if len(group["members"]) > len(passers) else []
-        group["origins"] = [ga for ga in group["members"] if ga not in group["passers"]]
+        fit = [i for i, c in enumerate(champions) if c.account_id != ga.account_id] or list(range(len(champions)))
+        index = min(fit, key=lambda i: (filled[i], -odds(champions[i], ga)))
+        place[ga.pk] = (index, PiracyMember.ORIGIN)
+        filled[index] += 1
+    options = [(i, role) for i in range(len(champions)) for role in (PiracyMember.PASSER, PiracyMember.ORIGIN)]
+    current = score(place)
+    for _ in range(400):
+        best_move, best_score = None, current
+        for ga in others:
+            for option in options:
+                if option == place[ga.pk]:
+                    continue
+                before = place[ga.pk]
+                place[ga.pk] = option
+                value = score(place)
+                place[ga.pk] = before
+                if value > best_score + 1e-9:
+                    best_move, best_score = (ga, option), value
+        if best_move is None:
+            # a passer that works often needs two accounts moved at once (the passer and an origin of another lobby)
+            best_move = _pair_move(others, options, place, score, current)
+            if best_move is None:
+                break
+            for ga, option in best_move[0]:
+                place[ga.pk] = option
+            current = best_move[1]
+            continue
+        place[best_move[0].pk] = best_move[1]
+        current = best_score
+    groups = []
+    for index, champion in enumerate(champions):
+        passers = [ga for ga in others if place[ga.pk] == (index, PiracyMember.PASSER)]
+        origins = [ga for ga in others if place[ga.pk] == (index, PiracyMember.ORIGIN)]
+        groups.append({"champion": champion, "members": passers + origins, "passers": passers, "origins": origins})
     return groups
 
 
