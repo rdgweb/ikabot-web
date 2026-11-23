@@ -90,15 +90,15 @@
     <div class="pr-flow">
       {% for g in groups %}
       <div class="pr-group">
-        {% if g.champion %}
+        {% for c in g.champions %}
         <div class="pr-champ"><span class="crown"><i class="bi bi-trophy-fill"></i></span>
-          <span style="min-width: 0;"><b>{{ g.champion.ga.name }}</b>
-            <span class="text-xs text-muted" style="display: block;">{{ g.champion.ga.account.label }} · trip. {{ g.champion.crew|default_if_none:"?"|intcomma }} · converte tudo, junta na fase final</span></span>
-          {% if g.projection %}<span style="margin-left: auto; text-align: right;" title="soma dos pontos de cada conta x a chance de chegarem à campeã (direto ou pela passagem)">
+          <span style="min-width: 0;"><b>{{ c.ga.name }}</b>
+            <span class="text-xs text-muted" style="display: block;">{{ c.ga.account.label }} · trip. {{ c.crew|default_if_none:"?"|intcomma }} · já pegou {{ c.took|intcomma }} pts no plano · converte tudo, junta na fase final</span></span>
+          {% if forloop.last and g.projection %}<span style="margin-left: auto; text-align: right;" title="soma dos pontos de cada conta x a chance de chegarem à campeã (direto ou pela passagem)">
             <span class="org-card-label" style="display: block;">pode juntar</span>
             <b style="font-family: ui-monospace, monospace;">≈ {{ g.projection.expected|intcomma }}</b>
             <span class="text-xs text-muted" style="display: block;">de {{ g.projection.held|intcomma }}</span></span>{% endif %}</div>
-        {% endif %}
+        {% endfor %}
         {% if g.passers %}<p class="pr-stage">Passagens</p>
         <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
           {% if r.must_convert %}<span style="color: #9a6a17;">converter {{ r.must_convert|intcomma }} para roubar</span>{% elif r.can_convert is not None %}<span>pode converter {{ r.can_convert|intcomma }}</span>{% endif %}
@@ -116,7 +116,8 @@
     </div>
     <div class="pr-rules">
       <span class="org-chip off">mesmo lobby nunca</span>
-      <span class="org-chip off">mesmo par 1x em 7 dias</span>
+      <span class="org-chip off">mesmo par 1x em {{ pair_days }} dias</span>
+      {% if groups|length == 1 and groups.0.champions|length > 1 %}<span class="org-chip off">campeã muito à frente deixa o alvo para a outra</span>{% endif %}
       <span class="org-chip off">vitória ≥ {{ month.min_win_percent }}%</span>
       <span class="org-chip off">a partir de {{ month.min_points|intcomma }} pts, hora sorteada em 24h</span>
       <span class="org-chip off">as outras convertem {{ month.share_percent }}% a cada {{ month.share_every_hours }}h</span>

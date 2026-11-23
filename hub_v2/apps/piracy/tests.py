@@ -86,8 +86,8 @@ class PlanTests(Base):
         self.assertNotEqual(champions[0].account_id, champions[1].account_id)
         self.assertEqual(month.members.count(), len(self.accounts))
         for passer in month.members.filter(role="passer").select_related("game_account"):
-            champion = month.members.get(role="champion", group=passer.group).game_account
-            self.assertNotEqual(passer.game_account.account_id, champion.account_id)
+            lobbies = {m.game_account.account_id for m in month.members.filter(role="champion", group=passer.group)}
+            self.assertTrue(lobbies - {passer.game_account.account_id})   # some champion of another lobby takes it
 
     def test_next_month_draws_accounts_that_were_not_champions(self):
         first = {c.game_account_id for c in self.plan().champions.all()}
@@ -153,12 +153,12 @@ class PlanTests(Base):
         month = self.plan(now=timezone.now())
         self.assertAlmostEqual((month.starts_at - timezone.now()).total_seconds(), 15 * 60, delta=30)
         self.assertGreater(month.ends_at, timezone.now() + timedelta(days=29))
-        # the roles swap at the turn, then every 7 days from it
+        # the roles swap at the turn, then every rotate_days (N-217: 3) from it
         self.assertAlmostEqual((month.turn_at - timezone.now()).total_seconds(), 3600, delta=60)
         self.assertEqual(services.next_rotation(month), month.turn_at)
         self.assertEqual(services.rotation_index(month, month.turn_at - timedelta(minutes=1)), 0)
         self.assertEqual(services.rotation_index(month, month.turn_at + timedelta(minutes=1)), 1)
-        self.assertEqual(services.next_rotation(month, month.turn_at + timedelta(minutes=1)), month.turn_at + timedelta(days=7))
+        self.assertEqual(services.next_rotation(month, month.turn_at + timedelta(minutes=1)), month.turn_at + timedelta(days=month.rotate_days))
         origin = month.members.filter(role="origin").first().game_account
         # N-216: in the 15 minutes before it starts the account already keeps its points (no conversion, no raid)
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")
@@ -340,11 +340,8 @@ class ChainChecks:
         members = services.members_now(month, now)
         out = {}
         for m in members:
-            g = out.setdefault(m.group, {"champion": None, "passer": [], "origin": []})
-            if m.role == "champion":
-                g["champion"] = m.game_account
-            else:
-                g[m.role].append(m.game_account)
+            g = out.setdefault(m.group, {"champion": [], "passer": [], "origin": []})
+            g[m.role].append(m.game_account)
         return out
 
     def assert_chain_closes(self, month, now=None):
@@ -362,18 +359,19 @@ class GroupingTests(ChainChecks, Base):
             self.assertEqual(month.members.count(), len(self.accounts))
             self.assert_chain_closes(month)
 
-    def test_the_big_lobby_feeds_the_others(self):
-        # as on s78: champions of the big lobby (6) and of the middle one (3); the small one (1) is the only third lobby
+    def test_one_pool_with_both_champions(self):
+        # N-217: only the two champions are fixed; passers and origins are one pool (more raids possible)
         big = [ga for ga in self.accounts if ga.account.label == "grande"]
         middle = [ga for ga in self.accounts if ga.account.label == "medio"]
         month = self.plan(champions=[big[0], middle[0]])
         self.assert_chain_closes(month)
         groups = self.groups_now(month)
-        of_big = next(g for g in groups.values() if g["champion"] == big[0])
-        self.assertTrue(of_big["passer"])
-        self.assertTrue(all(p.account.label != "grande" for p in of_big["passer"]))
-        # the big lobby's own accounts may be origins there: a passer of another lobby takes their points
-        self.assertTrue(any(o.account.label == "grande" for o in of_big["origin"]))
+        self.assertEqual(len(groups), 1)
+        pool = groups[1]
+        self.assertEqual({ga.pk for ga in pool["champion"]}, {big[0].pk, middle[0].pk})
+        self.assertTrue(pool["passer"])
+        self.assertEqual(len(pool["passer"]) + len(pool["origin"]), len(self.accounts) - 2)
+        self.assertEqual(month.rotate_days, services.ROTATE_DAYS)
 
     def test_a_passer_amid_origins_of_its_lobby_is_shown_as_blocked(self):
         big = [ga for ga in self.accounts if ga.account.label == "grande"]
@@ -410,7 +408,7 @@ class RotationTests(ChainChecks, Base):
         champions = {k for k, v in first.items() if v == "champion"}
         seen, passers_by_week = set(), []
         for week in range(6):
-            now = month.starts_at + timedelta(days=7 * week, minutes=1)
+            now = month.starts_at + timedelta(days=month.rotate_days * week, minutes=1)
             roles = {m.game_account_id: m.role for m in services.members_now(month, now)}
             self.assertEqual({k for k, v in roles.items() if v == "champion"}, champions)
             self.assertEqual(sum(1 for v in roles.values() if v == "passer"), sum(1 for v in first.values() if v == "passer"))
@@ -419,12 +417,11 @@ class RotationTests(ChainChecks, Base):
             seen |= passers_by_week[-1]
         self.assertNotEqual(passers_by_week[0], passers_by_week[1])         # the roles do swap
         self.assertGreater(len(seen), len(passers_by_week[0]))              # more accounts get to pass points on
-        for week in passers_by_week:                                        # never a passer of its champion's lobby
+        lobbies = {big[0].account_id, small[0].account_id}
+        for week in passers_by_week:                                        # some champion of another lobby takes it
             for pk in week:
                 ga = next(ga for ga in self.accounts if ga.pk == pk)
-                group = next(m.group for m in services.members_now(month) if m.game_account_id == pk)
-                champion = next(m.game_account for m in services.members_now(month) if m.group == group and m.role == "champion")
-                self.assertNotEqual(ga.account_id, champion.account_id)
+                self.assertTrue(lobbies - {ga.account_id})
 
 
 class FinalPhaseTests(Base):
@@ -493,3 +490,35 @@ class RegroupGapTests(Base):
             self.assertTrue(data["hold"], ga.name)
             self.assertEqual((data.get("convert_all"), data.get("share_percent"), data["route"]), (False, 0, None))
         self.assertTrue(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["starts_at"])
+
+
+class ChampionBalanceTests(Base):
+    """N-217: both champions may take the same account; the one far ahead leaves it to the other (with a margin)."""
+
+    def test_the_champion_far_ahead_leaves_the_target(self):
+        big = [ga for ga in self.accounts if ga.account.label == "grande"]
+        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
+        small = [ga for ga in self.accounts if ga.account.label == "pequeno"]
+        month = self.plan(champions=[big[0], middle[0]])
+        for ga in self.accounts:
+            self.set_strength(ga, points=0, crew=1000)
+        target = small[0]                                                    # of a third lobby: both may take it
+        self.set_strength(target, points=15000, crew=1000)
+        self.set_strength(big[0], points=0, crew=30000)
+        self.set_strength(middle[0], points=0, crew=30000)
+        # within the margin it is free: the one that asks first takes it
+        PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=big[0], target=middle[1],
+                                   target_points=20000, status="done", due_from=timezone.now(), due_until=timezone.now())
+        PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=middle[0], target=big[1],
+                                   target_points=18000, status="done", due_from=timezone.now(), due_until=timezone.now())
+        self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
+        self.assertTrue(PiracyRoute.objects.filter(raider=big[0], target=target, status="planned").exists())
+        PiracyRoute.objects.filter(raider=big[0], target=target).delete()
+        # far ahead (60.000 against 18.000): it leaves the target to the other champion, which takes it
+        PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=big[0], target=middle[2],
+                                   target_points=40000, status="done", due_from=timezone.now(), due_until=timezone.now())
+        self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
+        self.assertFalse(PiracyRoute.objects.filter(raider=big[0], target=target, status="planned").exists())
+        self.agent(f"/api/agent/piracy/next/?game_account_id={middle[0].pk}")
+        self.assertTrue(PiracyRoute.objects.filter(raider=middle[0], target=target, status="planned").exists())
+        self.assertEqual(services.champion_takes(month)[big[0].pk], 60000)

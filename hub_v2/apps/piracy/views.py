@@ -91,19 +91,21 @@ class PiracyView(LoginRequiredMixin, View):
         nxt = services.upcoming(month, by_ga) if month else {"planned": [], "waiting": []}
         if month:
             members = services.members_now(month)
+            takes = services.champion_takes(month)
             for number in sorted({m.group for m in members}):
                 of = [m for m in members if m.group == number]
                 pick = lambda role: [by_ga.get(m.game_account_id) or {"ga": m.game_account} for m in of if m.role == role]
                 champion = pick(PiracyMember.CHAMPION)
                 passers, origins = pick(PiracyMember.PASSER), pick(PiracyMember.ORIGIN)
                 # N-215: who may take whose points, by lobby (the game never lets one lobby raid itself)
-                links = services.chain(champion[0]["ga"] if champion else None, [r["ga"] for r in passers],
-                                       [r["ga"] for r in origins])
+                links = services.chain([r["ga"] for r in champion], [r["ga"] for r in passers], [r["ga"] for r in origins])
+                for r in champion:
+                    r["took"] = takes.get(r["ga"].pk, 0)
                 for r in origins:
                     r["takers"] = [t.name for t in links["takers"][r["ga"].pk]]
                 for r in passers:
                     r["sources"] = len(links["sources"][r["ga"].pk])
-                groups.append({"number": number, "champion": champion[0] if champion else None,
+                groups.append({"number": number, "champion": champion[0] if champion else None, "champions": champion,
                                "passers": passers, "origins": origins, "projection": projected.get(number),
                                "blocked": [ga.name for ga in links["blocked"]], "idle": [ga.name for ga in links["idle"]],
                                "wrong": [ga.name for ga in links["wrong"]]})
@@ -117,7 +119,7 @@ class PiracyView(LoginRequiredMixin, View):
             "turn": services.rotation_index(month) + 1 if month else None, "next_turn": services.next_rotation(month) if month else None, "next_raids": nxt["planned"], "waiting": nxt["waiting"], "routes": routes, "history": history, "own_ranked": own_ranked,
             "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
             "marked": services.marked_targets(getattr(request, "organization", None), server) if server else [],
-            "can_run": _can_run(request), "base_template": _base(request), "now": timezone.now(), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1),
+            "can_run": _can_run(request), "base_template": _base(request), "now": timezone.now(), "win_factor_pct": round((services.WIN_FACTOR - 1) * 100, 1), "pair_days": services.PAIR_DAYS,
             "best_odds": _best_odds(data.get("rows", []), able),
         })
 
