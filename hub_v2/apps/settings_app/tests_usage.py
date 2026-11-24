@@ -91,6 +91,12 @@ class OrganizationUsageTests(TestCase):
             self.assertEqual(thread.call_count, 1)
             cache.clear()
 
+    @patch.object(usage, "BATCH_SIZE", 1)
+    def test_primary_key_windows_count_each_log_once(self):
+        expected = usage._aggregate_query(JobLog, "job__account__organization_id")
+        actual = usage._aggregate(JobLog, "job__account__organization_id")
+        self.assertEqual(sorted(expected), sorted(actual))
+
     def test_navigation_matches_platform_permissions(self):
         from core.context_processors import nav_context
         from django.test import RequestFactory

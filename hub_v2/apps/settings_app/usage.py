@@ -24,6 +24,8 @@ LOCK_KEY = "organization-usage-collection"
 ERROR_KEY = "organization-usage-error"
 LOCK_SECONDS = 1800
 QUERY_SECONDS = 20
+BATCH_SIZE = 1000
+BATCH_MODELS = {"game.accountsnapshothistory", "jobs.joblog"}
 logger = logging.getLogger(__name__)
 
 # Large histories and their direct organization anchors. Other tables remain
@@ -65,11 +67,37 @@ def collecting():
 
 
 def _aggregate(model, anchor):
+    if model._meta.label_lower not in BATCH_MODELS:
+        return _aggregate_query(model, anchor)
+    # A whole-history scan can exceed the production query deadline even at
+    # two minutes. Read primary-key windows so each query remains bounded.
+    totals = {}
+    last = None
+    ceiling = model._base_manager.order_by("-pk").values_list("pk", flat=True).first()
+    while ceiling is not None:
+        window = model._base_manager.filter(pk__lte=ceiling)
+        if last is not None:
+            window = window.filter(pk__gt=last)
+        keys = list(window.order_by("pk").values_list("pk", flat=True)[:BATCH_SIZE])
+        if not keys:
+            break
+        for org_id, count, size in _aggregate_query(model, anchor, (keys[0], keys[-1])):
+            result = totals.setdefault(org_id, [0, 0])
+            result[0] += int(count)
+            result[1] += int(size)
+        last = keys[-1]
+    return [(org_id, *values) for org_id, values in totals.items()]
+
+
+def _aggregate_query(model, anchor, bounds=None):
     fields = [f for f in model._meta.concrete_fields if isinstance(f, (models.CharField, models.TextField, models.JSONField))]
     size = Value(0, output_field=BigIntegerField())
     for field in fields:
         size = size + Coalesce(ByteLength(F(field.name)), Value(0), output_field=BigIntegerField())
-    query = (model._base_manager.values(anchor).annotate(
+    records = model._base_manager.all()
+    if bounds:
+        records = records.filter(pk__gte=bounds[0], pk__lte=bounds[1])
+    query = (records.values(anchor).annotate(
         records=Count("pk"), content_bytes=Coalesce(Sum(size), Value(0), output_field=BigIntegerField())
     ).order_by())
     sql, params = query.query.sql_with_params()
