@@ -120,3 +120,18 @@ class MaintenanceTests(TestCase):
         response = self.client.get(url)
         self.assertContains(response, "Manutenção")
         self.assertContains(response, "Backup")
+
+    def test_global_actions_require_scope_confirmation_and_record_it(self):
+        from apps.audit.models import AuditEvent
+
+        user = get_user_model().objects.create_user("maintenance-staff", is_staff=True)
+        self.client.force_login(user)
+        url = reverse("settings_app:maintenance")
+        with patch.object(maintenance, "start", return_value=True) as start:
+            self.client.post(url, {"action": "backup"})
+            start.assert_not_called()
+            self.client.post(url, {"action": "backup", "scope": "installation"})
+            start.assert_called_once_with("backup")
+        event = AuditEvent.objects.get(action="maintenance.requested")
+        self.assertEqual(event.details, {"operation": "backup", "scope": "installation"})
+        self.assertContains(self.client.get(url), "Toda a instalação")

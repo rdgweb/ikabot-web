@@ -202,7 +202,7 @@ class RetentionInBackgroundTests(RetentionData):
         run = preview(self.user)
         url = reverse("settings_app:retention-run", args=[run.pk])
         with patch("apps.settings_app.retention.BATCH_SIZE", 1):
-            response = self.client.post(url, {"action": "start", "backup": "yes"})
+            response = self.client.post(url, {"action": "start", "backup": "yes", "scope": "installation"})
         self.assertRedirects(response, url, fetch_redirect_response=False)
         run.refresh_from_db()
         self.assertEqual((run.status, run.processed["snapshots"]), ("done", 3))

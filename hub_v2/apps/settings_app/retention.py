@@ -135,7 +135,7 @@ def process_batch(run_id, user, *, start=False, backup=False):
                 totals["logs_cursor"] = str(job_ids[-1])
                 run.processed = totals
                 run.save(update_fields=["status", "backup_confirmed", "processed"])
-                record("retention.batch", target=run, user=user, details={"kind": kind, "count": deleted})
+                record("retention.batch", target=run, user=user, details={"kind": kind, "count": deleted, "scope": "installation"})
                 return run
             remaining = run.planned[kind] - totals.get(kind, 0)
             limit = min(remaining, BATCH_SIZE if kind == "snapshots" else JOB_BATCH)
@@ -160,14 +160,14 @@ def process_batch(run_id, user, *, start=False, backup=False):
             if rows:
                 run.processed = totals
                 run.save(update_fields=["status", "backup_confirmed", "processed"])
-                record("retention.batch", target=run, user=user, details={"kind": kind, "count": len(rows)})
+                record("retention.batch", target=run, user=user, details={"kind": kind, "count": len(rows), "scope": "installation"})
                 if kind == "snapshots":
                     transaction.on_commit(bump_dashboard_cache_version)
                 return run  # one bounded transaction per request
         run.status = "done"
         run.processed = totals
         run.save(update_fields=["status", "backup_confirmed", "processed"])
-        record("retention.completed", target=run, user=user, details=totals)
+        record("retention.completed", target=run, user=user, details={**totals, "scope": "installation"})
         return run
 
 

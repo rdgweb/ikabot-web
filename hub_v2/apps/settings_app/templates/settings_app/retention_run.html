@@ -3,7 +3,8 @@
 {% block content %}
 <div class="card p-5">
   <h1 class="text-2xl font-bold mb-3">{% if run.status == 'done' %}Retenção concluída{% else %}Retenção do banco{% endif %}</h1>
-  <p class="text-sm text-muted mb-4">Prévia de {{ run.created_at|date:"d/m/Y H:i" }}. Abrange as contas da instalação. Os números podem diminuir se algum registro deixar de ser elegível.</p>
+  <p class="text-sm mb-2"><strong>Alcance global: todas as organizações desta instalação.</strong> Solicitante: {{ run.user.username }}.</p>
+  <p class="text-sm text-muted mb-4">Prévia de {{ run.created_at|date:"d/m/Y H:i" }}. As datas de corte usam esta referência. Os números podem diminuir se algum registro deixar de ser elegível.</p>
   <table class="data-table mb-4">
     <thead><tr><th>Dados</th><th>Prazo preservado</th><th>Elegíveis na prévia</th><th>Processados</th></tr></thead>
     <tbody>
@@ -19,6 +20,7 @@
     <form method="post" hx-boost="false" @submit.prevent.stop="$dispatch('confirm', {title: 'Executar retenção?', message: 'Os detalhes antigos e logs indicados nesta prévia serão removidos. As métricas serão preservadas. Confirme somente após verificar seu backup.', confirmLabel: 'Executar retenção', style: 'danger', onConfirm: () => $el.submit()})">
       {% csrf_token %}<input type="hidden" name="action" value="start">
       <label class="block mb-4 text-sm"><input type="checkbox" name="backup" value="yes" required> Tenho um backup recente e verifiquei que posso restaurá-lo.</label>
+      <label class="block mb-4 text-sm"><input type="checkbox" name="scope" value="installation" required> Confirmo a retenção dos dados elegíveis de todas as organizações.</label>
       <button type="submit" class="btn btn-danger">Confirmar e executar em lotes</button>
     </form>
     {% else %}<p class="text-sm mb-4">A execução está desativada. Ative a política nas configurações e gere uma nova prévia quando quiser executar.</p>{% endif %}
@@ -35,6 +37,7 @@
     {% else %}<p class="text-sm mb-4">Pausada. Os lotes já feitos ficam feitos; retomar continua de onde parou.</p>{% endif %}
     <form method="post" hx-boost="false">
       {% csrf_token %}<input type="hidden" name="action" value="resume">
+      <label class="block mb-3 text-sm"><input type="checkbox" name="scope" value="installation" required> Retomar a retenção de todas as organizações.</label>
       <button type="submit" class="btn btn-primary">Retomar</button>
     </form>
   {% endif %}

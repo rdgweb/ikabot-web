@@ -14,6 +14,13 @@
 <div class="card mb-3 px-4 py-2 text-sm" style="border-left: 4px solid {% if message.tags == 'error' %}#b04a3a{% else %}#5f8c4e{% endif %};">{{ message }}</div>
 {% endfor %}
 
+<section class="card p-4 mb-5" style="border-left:4px solid var(--ik-gold);">
+  <h2 class="font-semibold mb-2"><i class="bi bi-buildings"></i> Toda a instalação</h2>
+  <p class="text-sm">Esta página administra todas as organizações. O backup inclui o banco completo; a retenção trata dados de todas as contas elegíveis; a otimização reconstrói tabelas compartilhadas. Seu usuário identifica quem pediu a operação.</p>
+  <p class="text-sm text-muted mt-2">Disco e tabelas são recursos compartilhados. O espaço livre dentro das tabelas pode ser reutilizado pelo banco; uma redução no disco depende da reconstrução e do espaço disponível.</p>
+  <a href="{% url 'settings_app:usage' %}" class="btn btn-secondary btn-sm mt-3">Ver uso por organização</a>
+</section>
+
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
   <section class="card p-5">
     <div class="text-sm text-muted mb-1"><i class="bi bi-hdd"></i> Disco</div>
@@ -43,7 +50,8 @@
     <div class="card-header flex items-center justify-between">
       <h2 class="font-semibold"><i class="bi bi-archive"></i> Backup</h2>
       <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="backup">
-        <button class="btn btn-primary btn-sm" {% if busy or not backup_dir_ok %}disabled{% endif %}><i class="bi bi-play-fill"></i> Fazer agora</button>
+        <label class="text-xs block mb-2"><input type="checkbox" name="scope" value="installation" required> Banco completo de todas as organizações</label>
+        <button class="btn btn-primary btn-sm" {% if busy or not backup_dir_ok %}disabled{% endif %}><i class="bi bi-play-fill"></i> Fazer backup global</button>
       </form>
     </div>
     <div class="p-4">
@@ -64,7 +72,8 @@
     <div class="card-header flex items-center justify-between">
       <h2 class="font-semibold"><i class="bi bi-lightning-charge"></i> Otimização</h2>
       <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="action" value="optimize">
-        <button class="btn btn-secondary btn-sm" {% if busy %}disabled{% endif %}><i class="bi bi-play-fill"></i> Otimizar agora</button>
+        <label class="text-xs block mb-2"><input type="checkbox" name="scope" value="installation" required> Tabelas compartilhadas por todas as organizações</label>
+        <button class="btn btn-secondary btn-sm" {% if busy %}disabled{% endif %}><i class="bi bi-play-fill"></i> Otimizar banco global</button>
       </form>
     </div>
     <div class="p-4">
@@ -84,6 +93,7 @@
 
 <section class="card mb-6">
   <div class="card-header"><h2 class="font-semibold"><i class="bi bi-calendar-check"></i> Agenda</h2></div>
+  <p class="px-5 pt-4 text-sm text-muted">As agendas de backup e otimização também abrangem toda a instalação. Ligar a agenda autoriza as próximas execuções nesse alcance.</p>
   <form method="post" class="p-5" hx-boost="false">
     {% csrf_token %}<input type="hidden" name="action" value="save">
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">

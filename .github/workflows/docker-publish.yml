@@ -77,6 +77,11 @@ jobs:
           TEST_MARIADB=1 python hub_v2/manage.py test apps.jobs.tests_city_expansion --settings=config.settings.test --noinput
           python agent_v2/tests/test_alert_wine_runner.py
 
+      - name: Test platform usage and maintenance scope
+        run: |
+          python hub_v2/manage.py test apps.settings_app.tests_usage apps.settings_app.tests_maintenance --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.settings_app.tests_usage --settings=config.settings.test --noinput
+
       - name: Set up Node for browser regression tests
         uses: actions/setup-node@v4
         with:

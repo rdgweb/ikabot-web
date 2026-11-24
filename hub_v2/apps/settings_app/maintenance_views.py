@@ -65,6 +65,9 @@ class MaintenanceView(StaffOnly, View):
 
     def post(self, request):
         action = request.POST.get("action")
+        if action in ("backup", "optimize") and request.POST.get("scope") != "installation":
+            messages.error(request, "Confirme que a operação abrange todas as organizações desta instalação.")
+            return redirect("settings_app:maintenance")
         if action == "save":
             form = MaintenanceForm(request.POST)
             if form.is_valid():
@@ -74,6 +77,10 @@ class MaintenanceView(StaffOnly, View):
                 messages.error(request, "Confira os valores: " + "; ".join(f"{k}: {', '.join(v)}" for k, v in form.errors.items()))
         elif action in ("backup", "optimize"):
             if maintenance.start(action):
+                from apps.audit.services import record
+
+                record("maintenance.requested", user=request.user,
+                       details={"operation": action, "scope": "installation"})
                 messages.success(request, "Backup iniciado no servidor." if action == "backup" else "Otimização iniciada no servidor.")
             else:
                 messages.error(request, "Já há uma manutenção rodando; espere ela terminar.")
@@ -87,5 +94,5 @@ class MaintenanceBackupDownloadView(StaffOnly, View):
             raise Http404
         from apps.audit.services import record
 
-        record("maintenance.backup_download", user=request.user, details={"file": name})
+        record("maintenance.backup_download", user=request.user, details={"file": name, "scope": "installation"})
         return FileResponse(open(path, "rb"), as_attachment=True, filename=name)

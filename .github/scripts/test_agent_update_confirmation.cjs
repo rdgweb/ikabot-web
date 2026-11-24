@@ -59,7 +59,10 @@ for (const navigation of ['direct', 'htmx']) {
         await page.getByRole('button', { name: fixture.button }).click();
         assert.equal(updates.length, 0, 'backup confirmation is required');
         assert.equal(await dialog.isVisible(), false);
-        await page.getByRole('checkbox').check();
+        await page.locator('input[name="backup"]').check();
+        await page.getByRole('button', { name: fixture.button }).click();
+        assert.equal(await dialog.isVisible(), false, 'global scope confirmation is also required');
+        await page.locator('input[name="scope"]').check();
       }
       await page.getByRole('button', { name: fixture.button }).click();
       await dialog.waitFor({ state: 'visible' });
@@ -78,7 +81,10 @@ for (const navigation of ['direct', 'htmx']) {
       assert.equal(updates.length, 1, 'confirm must send exactly one update');
       assert.equal(updates[0].method(), 'POST');
       assert.match(updates[0].postData(), /csrfmiddlewaretoken=test-token/);
-      if (fixture.backup) assert.match(updates[0].postData(), /backup=yes/);
+      if (fixture.backup) {
+        assert.match(updates[0].postData(), /backup=yes/);
+        assert.match(updates[0].postData(), /scope=installation/);
+      }
       assert.deepEqual(errors, []);
     } finally {
       await browser.close();

@@ -63,6 +63,8 @@ def nav_context(request):
                 {"name": "Atualizações", "url": "/notes/atualizacoes/", "icon": "bi-journal-code", "perm": "staff"},
                 {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "owner"},
                 {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "staff"},
+                {"name": "Manutenção", "url": "/settings/manutencao/", "icon": "bi-tools", "perm": "staff"},
+                {"name": "Uso por organização", "url": "/settings/uso/", "icon": "bi-pie-chart", "perm": "staff"},
                 {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "staff"},
                 {"name": "Organizações", "url": "/sistema/organizacoes/", "icon": "bi-buildings", "perm": "staff"},
                 {"name": "Convites", "url": "/users/convites/", "icon": "bi-envelope-paper", "perm": "staff"},

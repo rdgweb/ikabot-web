@@ -71,6 +71,8 @@ class RetentionRunView(StaffOnly, View):
         action = request.POST.get("action")
         if action not in ("start", "pause", "resume", "next"):
             return HttpResponseBadRequest("Ação inválida.")
+        if action in ("start", "resume", "next") and request.POST.get("scope") != "installation":
+            return HttpResponseBadRequest("Confirme o alcance global: todas as organizações desta instalação.")
         try:
             if action == "start":
                 run = process_batch(pk, request.user, start=True, backup=request.POST.get("backup") == "yes")
