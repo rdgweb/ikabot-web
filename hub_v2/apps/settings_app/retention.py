@@ -1,8 +1,9 @@
 """Explicit, bounded history maintenance. Merely saving a policy never deletes data."""
 import json
+from contextlib import contextmanager
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.db.models import F, OuterRef, Q, Subquery
 from django.utils import timezone
 
@@ -93,6 +94,33 @@ def preview(user):
         return run
 
 
+def _lock_job_rows(ids):
+    # Do not lock the eligibility query: its joins/subqueries include live jobs
+    # and workflows. Lock only the candidate rows, then check eligibility again.
+    return list(Job.objects.filter(pk__in=ids).select_for_update().order_by("pk").values_list("pk", flat=True))
+
+
+def _locked_job_ids(query, limit):
+    selected = list(query.order_by("pk").values_list("pk", flat=True)[:limit])
+    if not selected:
+        return []
+    locked = _lock_job_rows(selected)
+    eligible = list(query.filter(pk__in=locked).order_by("pk").values_list("pk", flat=True))
+    if not eligible and query.exists():
+        # A changed first window must not make us mark the rest as finished.
+        raise OperationalError(1020, "Retention candidates changed; retry transaction")
+    return eligible
+
+
+@contextmanager
+def _batch_stage(kind):
+    try:
+        yield
+    except Exception as exc:
+        exc.retention_stage = kind
+        raise
+
+
 def process_batch(run_id, user, *, start=False, backup=False):
     with unscoped(), transaction.atomic():
         # Serialize maintenance requests, including concurrent tabs and policy changes.
@@ -117,53 +145,56 @@ def process_batch(run_id, user, *, start=False, backup=False):
         totals = dict(run.processed)
         queries = candidates(run)
         for kind in KINDS:
-            if kind == "logs":
-                # N-181: logs go by groups of eligible jobs, through the (job, created_at) index; a cursor on the job
-                # id keeps the batches resumable (1,7 million lines would be 1.700 requests one thousand at a time)
-                if totals.get("logs_done") or not run.planned.get("logs"):
+            with _batch_stage(kind):
+                if kind == "logs":
+                    # N-181: logs go by groups of eligible jobs, through the (job, created_at) index; a cursor on the job
+                    # id keeps the batches resumable (1,7 million lines would be 1.700 requests one thousand at a time)
+                    if totals.get("logs_done") or not run.planned.get("logs"):
+                        continue
+                    cursor = str(totals.get("logs_cursor") or "")
+                    eligible = eligible_jobs(run.created_at, run.policy["log_days"])
+                    if cursor:
+                        eligible = eligible.filter(pk__gt=cursor)
+                    job_ids = _locked_job_ids(eligible, LOG_JOB_BATCH)
+                    if not job_ids:
+                        totals["logs_done"] = True
+                        continue
+                    deleted, _ = JobLog.objects.filter(
+                        job_id__in=job_ids, created_at__lt=run.created_at - timedelta(days=run.policy["log_days"])).delete()
+                    totals["logs"] = totals.get("logs", 0) + deleted
+                    totals["logs_cursor"] = str(job_ids[-1])
+                    run.processed = totals
+                    run.save(update_fields=["status", "backup_confirmed", "processed"])
+                    record("retention.batch", target=run, user=user, details={"kind": kind, "count": deleted, "scope": "installation"})
+                    return run
+                remaining = run.planned[kind] - totals.get(kind, 0)
+                limit = min(remaining, BATCH_SIZE if kind == "snapshots" else JOB_BATCH)
+                if limit <= 0:
                     continue
-                cursor = str(totals.get("logs_cursor") or "")
-                job_ids = list(eligible_jobs(run.created_at, run.policy["log_days"]).filter(pk__gt=cursor)
-                               .order_by("pk").values_list("pk", flat=True)[:LOG_JOB_BATCH]) if cursor else list(
-                    eligible_jobs(run.created_at, run.policy["log_days"]).order_by("pk").values_list("pk", flat=True)[:LOG_JOB_BATCH])
-                if not job_ids:
-                    totals["logs_done"] = True
-                    continue
-                deleted, _ = JobLog.objects.filter(
-                    job_id__in=job_ids, created_at__lt=run.created_at - timedelta(days=run.policy["log_days"])).delete()
-                totals["logs"] = totals.get("logs", 0) + deleted
-                totals["logs_cursor"] = str(job_ids[-1])
-                run.processed = totals
-                run.save(update_fields=["status", "backup_confirmed", "processed"])
-                record("retention.batch", target=run, user=user, details={"kind": kind, "count": deleted, "scope": "installation"})
-                return run
-            remaining = run.planned[kind] - totals.get(kind, 0)
-            limit = min(remaining, BATCH_SIZE if kind == "snapshots" else JOB_BATCH)
-            if limit <= 0:
-                continue
-            qs = queries[kind]
-            rows = list(qs.select_for_update().order_by("pk")[:limit])
-            if kind == "snapshots":
-                for row in rows:
-                    values = dict(account_id=row.account_id, game_account_id=row.game_account_id,
-                                  captured_at=row.captured_at, metrics=_metrics(row))
-                    metric, _ = AccountHistoryMetric.objects.get_or_create(pk=row.pk, defaults=values)
-                    if any(getattr(metric, key) != value for key, value in values.items()):
-                        raise ValueError("Métricas divergentes; o snapshot original foi preservado.")
-                    row.delete()
-            else:
-                # Keep inputs and all relationships: old jobs remain identifiable/reusable.
-                ids = [row.pk for row in rows]
-                Job.objects.filter(pk__in=ids).update(progress_json=COMPACT_PROGRESS)
-                JobRetentionReceipt.objects.bulk_create([JobRetentionReceipt(job_id=pk) for pk in ids], ignore_conflicts=True)
-            totals[kind] = totals.get(kind, 0) + len(rows)
-            if rows:
-                run.processed = totals
-                run.save(update_fields=["status", "backup_confirmed", "processed"])
-                record("retention.batch", target=run, user=user, details={"kind": kind, "count": len(rows), "scope": "installation"})
+                qs = queries[kind]
+                rows = (list(qs.select_for_update().order_by("pk")[:limit]) if kind == "snapshots"
+                        else _locked_job_ids(qs, limit))
                 if kind == "snapshots":
-                    transaction.on_commit(bump_dashboard_cache_version)
-                return run  # one bounded transaction per request
+                    for row in rows:
+                        values = dict(account_id=row.account_id, game_account_id=row.game_account_id,
+                                      captured_at=row.captured_at, metrics=_metrics(row))
+                        metric, _ = AccountHistoryMetric.objects.get_or_create(pk=row.pk, defaults=values)
+                        if any(getattr(metric, key) != value for key, value in values.items()):
+                            raise ValueError("Métricas divergentes; o snapshot original foi preservado.")
+                        row.delete()
+                else:
+                    # Keep inputs and all relationships: old jobs remain identifiable/reusable.
+                    ids = rows
+                    Job.objects.filter(pk__in=ids).update(progress_json=COMPACT_PROGRESS)
+                    JobRetentionReceipt.objects.bulk_create([JobRetentionReceipt(job_id=pk) for pk in ids], ignore_conflicts=True)
+                totals[kind] = totals.get(kind, 0) + len(rows)
+                if rows:
+                    run.processed = totals
+                    run.save(update_fields=["status", "backup_confirmed", "processed"])
+                    record("retention.batch", target=run, user=user, details={"kind": kind, "count": len(rows), "scope": "installation"})
+                    if kind == "snapshots":
+                        transaction.on_commit(bump_dashboard_cache_version)
+                    return run  # one bounded transaction per request
         run.status = "done"
         run.processed = totals
         run.save(update_fields=["status", "backup_confirmed", "processed"])
@@ -181,7 +212,25 @@ RESUME_CHECK_SECONDS = 60
 BATCH_PAUSE = 0.2                   # between batches, so the database serves everyone else too
 BUSY_RETRIES = 8                    # a batch that waited too long for a row someone else held is tried again this often
 BUSY_WAIT_SECONDS = 30              # with this long a wait each time (more each try)
-BUSY_CODES = {1205, 1213}           # lock wait timeout, deadlock: the database asks to try the transaction again
+BUSY_CODES = {1020, 1205, 1213}     # changed row, lock wait timeout, deadlock: retry the whole transaction
+
+
+def _error_details(exc):
+    # Persist identifiers only, never SQL, parameters, secrets or raw DB messages.
+    code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else None
+    return {"code": code, "type": type(exc).__name__, "stage": getattr(exc, "retention_stage", "prepare"),
+            "at": timezone.now().isoformat()}
+
+
+def _record_retry(run_id, exc, attempt):
+    with unscoped(), transaction.atomic():
+        run = RetentionRun.objects.select_for_update().get(pk=run_id)
+        if run.status != "running":
+            return
+        details = {**_error_details(exc), "attempt": attempt, "maximum": BUSY_RETRIES}
+        run.processed = {**run.processed, "last_retry": details}
+        run.save(update_fields=["processed"])
+        record("retention.retry", target=run, user=run.user, details={**details, "scope": "installation"})
 
 
 def _database_busy(exc: Exception) -> bool:
@@ -208,15 +257,17 @@ def runner_active(run_id=None) -> bool:
     return bool(value) and (run_id is None or str(value) == str(run_id))
 
 
-def _set_status(run_id, status, *, error=None) -> RetentionRun:
+def _set_status(run_id, status, *, error=None, error_details=None) -> RetentionRun:
     with unscoped(), transaction.atomic():
         run = RetentionRun.objects.select_for_update().get(pk=run_id)
         if run.status in ("running", "paused"):
             run.status = status
             processed = dict(run.processed)
             processed.pop("error", None)
+            processed.pop("error_details", None)
             if error:
                 processed["error"] = error
+                processed["error_details"] = error_details or {}
             if status == "running":
                 processed["on_server"] = True   # only these go on by themselves (a run left half-way by the old page
                                                 # waits for someone to resume it)
@@ -265,6 +316,7 @@ def run_in_background(run_id) -> bool:
                     if _database_busy(exc) and busy < BUSY_RETRIES:
                         # the batch's transaction was undone by the database: nothing half done, try it again
                         busy += 1
+                        _record_retry(run_id, exc, busy)
                         if threading.get_ident() != caller:
                             connections.close_all()     # a fresh connection for the next try
                         time.sleep(BUSY_WAIT_SECONDS * busy)
@@ -272,7 +324,10 @@ def run_in_background(run_id) -> bool:
                     with unscoped():
                         if RetentionRun.objects.filter(pk=run_id).exclude(status="running").exists():
                             break                       # paused while this batch waited: not an error
-                    _set_status(run_id, "paused", error=str(exc) if isinstance(exc, ValueError) else "Erro inesperado num lote; a execução parou.")
+                    message = str(exc) if isinstance(exc, ValueError) else (
+                        "O banco permaneceu em disputa após as tentativas; a execução foi pausada."
+                        if _database_busy(exc) else "Erro inesperado num lote; a execução parou.")
+                    _set_status(run_id, "paused", error=message, error_details=_error_details(exc))
                     if not isinstance(exc, ValueError):
                         import logging
 

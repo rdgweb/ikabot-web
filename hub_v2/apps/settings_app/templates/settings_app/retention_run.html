@@ -15,6 +15,7 @@
   </table>
   <p class="text-sm mb-4">Redução estimada dos dados: <strong>{{ run.planned.estimated_bytes|filesizeformat }}</strong>. Estimativa por amostra, sem contar índices; não é uma promessa de espaço devolvido ao disco.</p>
   <p class="text-sm mb-4">Os valores e datas das métricas dos gráficos são preservados. Os detalhes completos dos snapshots e resultados compactados não poderão ser recuperados sem o backup. Jobs, parâmetros, vínculos e registros atuais das contas permanecem.</p>
+  {% if run.processed.last_retry %}<p class="text-sm text-muted mb-4">Última repetição por disputa no banco: tentativa {{ run.processed.last_retry.attempt }} de {{ run.processed.last_retry.maximum }}. O lote é desfeito antes de tentar novamente.</p>{% endif %}
   {% if run.status == 'preview' %}
     {% if run.policy.enabled %}
     <form method="post" hx-boost="false" @submit.prevent.stop="$dispatch('confirm', {title: 'Executar retenção?', message: 'Os detalhes antigos e logs indicados nesta prévia serão removidos. As métricas serão preservadas. Confirme somente após verificar seu backup.', confirmLabel: 'Executar retenção', style: 'danger', onConfirm: () => $el.submit()})">
@@ -35,6 +36,7 @@
   {% elif run.status == 'paused' or run.status == 'running' %}
     {% if error %}<p class="text-sm mb-4" style="color: #b04a3a;"><i class="bi bi-exclamation-triangle"></i> Parou: {{ error }}</p>
     {% else %}<p class="text-sm mb-4">Pausada. Os lotes já feitos ficam feitos; retomar continua de onde parou.</p>{% endif %}
+    {% if run.processed.error_details %}<details class="text-sm mb-4"><summary style="cursor:pointer">Diagnóstico da interrupção</summary><p class="mt-2">Etapa: {{ run.processed.error_details.stage }} · Tipo: {{ run.processed.error_details.type }}{% if run.processed.error_details.code %} · Código: {{ run.processed.error_details.code }}{% endif %} · Registro: {{ run.processed.error_details.at }}</p></details>{% endif %}
     <form method="post" hx-boost="false">
       {% csrf_token %}<input type="hidden" name="action" value="resume">
       <label class="block mb-3 text-sm"><input type="checkbox" name="scope" value="installation" required> Retomar a retenção de todas as organizações.</label>

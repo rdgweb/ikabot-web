@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.test import TransactionTestCase, skipUnlessDBFeature
 from django.urls import reverse
 from django.utils import timezone
 
@@ -54,6 +55,38 @@ class RetentionData(TestCase):
 
 
 class RetentionTests(RetentionData):
+    def test_failed_job_batch_rolls_back_result_receipt_and_counters(self):
+        from django.db import OperationalError
+        job = self.job()
+        run = preview(self.user)
+        with patch.object(JobRetentionReceipt.objects, "bulk_create", side_effect=OperationalError(1020, "changed row")):
+            with self.assertRaises(OperationalError):
+                process_batch(run.pk, self.user, start=True, backup=True)
+        job.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(job.progress_json, '{"large_result": "old"}')
+        self.assertEqual(run.status, "preview")
+        self.assertEqual(run.processed, {})
+        self.assertFalse(JobRetentionReceipt.objects.exists())
+        self.assertEqual(job.logs.count(), 1)
+
+    def test_changed_window_does_not_skip_remaining_jobs(self):
+        from django.db import OperationalError
+        from . import retention
+        jobs = [self.job(), self.job()]
+        run = preview(self.user)
+        lock = retention._lock_job_rows
+        def changed(ids):
+            Job.objects.filter(pk__in=ids).update(status="running")
+            return lock(ids)
+        with patch.object(retention, "JOB_BATCH", 1), patch.object(retention, "_lock_job_rows", changed):
+            with self.assertRaises(OperationalError):
+                process_batch(run.pk, self.user, start=True, backup=True)
+        # The failed transaction also undoes this test's simulated change.
+        self.assertFalse(JobRetentionReceipt.objects.exists())
+        run = self.finish(run)
+        self.assertEqual(run.processed["jobs"], 2)
+
     def test_graphs_identical_after_compaction_for_every_period(self):
         old = self.snapshot(120)
         self.snapshot(45, 600)
@@ -308,3 +341,144 @@ class RetentionInBackgroundTests(RetentionData):
         run.refresh_from_db()
         self.assertEqual(run.status, "done")
         self.assertNotIn("error", run.processed)
+
+    def test_changed_record_retries_the_entire_job_transaction_once(self):
+        from django.db import OperationalError
+        from . import retention
+        job = self.job()
+        run = preview(self.user)
+        run.status = "running"
+        run.save(update_fields=["status"])
+        create = JobRetentionReceipt.objects.bulk_create
+        attempts = []
+        def flaky(*args, **kwargs):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise OperationalError(1020, "changed row")
+            return create(*args, **kwargs)
+        with patch.object(JobRetentionReceipt.objects, "bulk_create", side_effect=flaky), patch.object(retention, "BUSY_WAIT_SECONDS", 0):
+            retention.resume(run.pk)
+        run.refresh_from_db()
+        job.refresh_from_db()
+        self.assertEqual(run.status, "done")
+        self.assertEqual(run.processed["jobs"], 1)
+        self.assertEqual(run.processed["logs"], 1)
+        self.assertEqual(run.processed["last_retry"]["code"], 1020)
+        self.assertEqual(run.processed["last_retry"]["stage"], "jobs")
+        self.assertEqual(JobRetentionReceipt.objects.count(), 1)
+        self.assertEqual(job.inputs_json, '{"important": "keep"}')
+
+    def test_retry_limit_pauses_with_safe_persistent_diagnostics(self):
+        from django.db import OperationalError
+        from . import retention
+        self.job()
+        run = preview(self.user)
+        run.status = "running"
+        run.save(update_fields=["status"])
+        with patch.object(retention, "_lock_job_rows", side_effect=OperationalError(1020, "secret SQL values")) as lock, \
+             patch.object(retention, "BUSY_RETRIES", 2), patch.object(retention, "BUSY_WAIT_SECONDS", 0):
+            retention.resume(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(lock.call_count, 3)
+        self.assertEqual(run.status, "paused")
+        self.assertEqual(run.processed["last_retry"]["attempt"], 2)
+        self.assertEqual(run.processed["error_details"]["code"], 1020)
+        self.assertEqual(run.processed["error_details"]["stage"], "jobs")
+        self.assertNotIn("secret", json.dumps(run.processed))
+        self.assertFalse(JobRetentionReceipt.objects.exists())
+        self.client.force_login(self.user)
+        page = self.client.get(reverse("settings_app:retention-run", args=[run.pk]))
+        self.assertContains(page, "Diagnóstico da interrupção")
+        self.assertContains(page, "1020")
+        self.assertNotContains(page, "secret SQL")
+
+    def test_log_delete_is_rolled_back_before_retry_without_double_counting(self):
+        from django.db import OperationalError
+        from django.db.models.query import QuerySet
+        from . import retention
+        job = self.job()
+        run = preview(self.user)
+        run.status = "running"
+        run.save(update_fields=["status"])
+        delete = QuerySet.delete
+        attempts = []
+        def flaky(query):
+            if query.model is not JobLog:
+                return delete(query)
+            attempts.append(1)
+            self.assertEqual(job.logs.count(), 1)
+            result = delete(query)
+            if len(attempts) == 1:
+                raise OperationalError(1020, "changed row")
+            return result
+        with patch.object(QuerySet, "delete", flaky), patch.object(retention, "BUSY_WAIT_SECONDS", 0):
+            retention.resume(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(run.status, "done")
+        self.assertEqual(run.processed["logs"], 1)
+        self.assertEqual(run.processed["last_retry"]["stage"], "logs")
+        self.assertEqual(run.processed["jobs"], 1)
+
+    def test_non_transient_database_error_does_not_retry(self):
+        from django.db import OperationalError
+        from . import retention
+        self.job()
+        run = preview(self.user)
+        run.status = "running"
+        run.save(update_fields=["status"])
+        with patch.object(retention, "_lock_job_rows", side_effect=OperationalError(1146, "missing table")) as lock:
+            retention.resume(run.pk)
+        run.refresh_from_db()
+        self.assertEqual(lock.call_count, 1)
+        self.assertEqual(run.status, "paused")
+        self.assertEqual(run.processed["error_details"]["code"], 1146)
+        self.assertNotIn("last_retry", run.processed)
+
+
+class RetentionConcurrentJobsTests(TransactionTestCase):
+    """Actual second-connection change between selection and row locking (MariaDB CI)."""
+    setUp = RetentionData.setUp
+    save_policy = RetentionData.save_policy
+    job = RetentionData.job
+
+    def _concurrent_protection(self, stage):
+        import threading
+        from django.db import connections
+        from . import retention
+        parent = self.job()
+        run = preview(self.user)
+        if stage == "logs":
+            run.planned["jobs"] = 0
+            run.save(update_fields=["planned"])
+        lock = retention._lock_job_rows
+        errors = []
+        def writer():
+            try:
+                self.job(status="running", source_job_id=parent.pk, archived_at=None, finished_at=None)
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connections.close_all()
+        def after_selection(ids):
+            thread = threading.Thread(target=writer)
+            thread.start()
+            thread.join(timeout=10)
+            self.assertFalse(thread.is_alive(), "concurrent writer did not finish")
+            self.assertFalse(errors, errors)
+            return lock(ids)
+        with patch.object(retention, "_lock_job_rows", after_selection):
+            result = process_batch(run.pk, self.user, start=True, backup=True)
+        parent.refresh_from_db()
+        self.assertEqual(result.status, "done")
+        self.assertEqual(parent.progress_json, '{"large_result": "old"}')
+        self.assertEqual(parent.logs.count(), 1)
+        self.assertFalse(JobRetentionReceipt.objects.exists())
+
+    @skipUnlessDBFeature("has_select_for_update")
+    def test_concurrent_live_dependency_is_rechecked_before_compaction(self):
+        self._concurrent_protection("jobs")
+
+    @skipUnlessDBFeature("has_select_for_update")
+    def test_concurrent_live_dependency_is_rechecked_before_log_deletion(self):
+        self._concurrent_protection("logs")
