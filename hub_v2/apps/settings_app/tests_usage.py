@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db import OperationalError
 from django.test import TestCase
 from django.urls import reverse
 
@@ -95,6 +96,18 @@ class OrganizationUsageTests(TestCase):
     def test_primary_key_windows_count_each_log_once(self):
         expected = usage._aggregate_query(JobLog, "job__account__organization_id")
         actual = usage._aggregate(JobLog, "job__account__organization_id")
+        self.assertEqual(sorted(expected), sorted(actual))
+
+    @patch.object(usage, "BATCH_SIZE", 1)
+    def test_timed_out_source_retries_in_primary_key_windows(self):
+        original = usage._aggregate_query
+        expected = original(Job, "account__organization_id")
+        def query(model, anchor, bounds=None):
+            if bounds is None:
+                raise OperationalError(1969, "statement deadline exceeded")
+            return original(model, anchor, bounds)
+        with patch.object(usage, "_aggregate_query", side_effect=query):
+            actual = usage._aggregate(Job, "account__organization_id")
         self.assertEqual(sorted(expected), sorted(actual))
 
     def test_navigation_matches_platform_permissions(self):

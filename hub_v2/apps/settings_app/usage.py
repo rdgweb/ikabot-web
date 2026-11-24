@@ -11,7 +11,7 @@ from datetime import timedelta
 
 from django.apps import apps
 from django.core.cache import cache
-from django.db import connection, connections, models, transaction
+from django.db import OperationalError, connection, connections, models, transaction
 from django.db.models import BigIntegerField, Count, F, Func, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -68,7 +68,11 @@ def collecting():
 
 def _aggregate(model, anchor):
     if model._meta.label_lower not in BATCH_MODELS:
-        return _aggregate_query(model, anchor)
+        try:
+            return _aggregate_query(model, anchor)
+        except OperationalError as exc:
+            if not exc.args or exc.args[0] != 1969:
+                raise
     # A whole-history scan can exceed the production query deadline even at
     # two minutes. Read primary-key windows so each query remains bounded.
     totals = {}
