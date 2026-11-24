@@ -59,7 +59,9 @@ def state_of(account: BillingAccount | None, now: datetime | None = None) -> Sta
     paid = account.paid_until is not None and account.status in (BillingAccount.ACTIVE, BillingAccount.CANCELED)
     end = account.paid_until if paid else account.trial_ends_at
     limit = account.limit if paid else plans.TRIAL_LIMIT
-    if end is None or now <= end:
+    if end is None:
+        return State("paused", "Período do plano não definido", False, True, limit, None)
+    if now < end:
         if paid:
             label = "Cancelada · vale até o fim do período" if account.status == BillingAccount.CANCELED else "Assinatura ativa"
             return State("active", label, True, False, limit, end)

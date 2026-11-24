@@ -65,7 +65,9 @@ def nav_context(request):
                 {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "staff"},
                 {"name": "Manutenção", "url": "/settings/manutencao/", "icon": "bi-tools", "perm": "staff"},
                 {"name": "Uso por organização", "url": "/settings/uso/", "icon": "bi-pie-chart", "perm": "staff"},
-                {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "staff"},
+                {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "principal"},
+                {"name": "Permissões e acessos", "url": "/users/permissoes/", "icon": "bi-person-lock", "perm": "principal"},
+                {"name": "Documentação da API", "url": "/api/docs/", "icon": "bi-braces", "perm": "staff"},
                 {"name": "Organizações", "url": "/sistema/organizacoes/", "icon": "bi-buildings", "perm": "staff"},
                 {"name": "Convites", "url": "/users/convites/", "icon": "bi-envelope-paper", "perm": "staff"},
             ],
@@ -86,6 +88,7 @@ def nav_context(request):
             or (item["perm"] == "admin" and is_admin)
             or (item["perm"] == "operator" and is_operator)
             or (item["perm"] == "staff" and is_staff)
+            or (item["perm"] == "principal" and user.is_superuser and user.is_active)
             or (item["perm"] == "owner" and is_owner)
             or (item["perm"] == "billing" and _billing_open(is_staff))
         ]
@@ -110,35 +113,23 @@ def _billing_open(is_staff: bool) -> bool:
 
 
 def _is_admin(user):
-    if not user or not getattr(user, "is_authenticated", False):
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    return user.groups.filter(name="admin").exists()
+    from core.access import platform_admin
+    return platform_admin(user)
 
 
 def _is_operator(user):
-    if not user or not getattr(user, "is_authenticated", False):
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    if user.groups.filter(name__in=["admin", "operator"]).exists():
-        return True
-    # N-106: an owner or operator of an organization runs its own nodes, accounts and presets
-    return user.memberships.filter(role__in=["owner", "operator"]).exists()
+    from core.access import operator
+    return operator(user)
 
 
 def _is_staff(user):
-    """The platform's own team: the only ones who see the platform's pages (N-106)."""
-    return bool(user and getattr(user, "is_authenticated", False) and (user.is_superuser or user.is_staff))
+    from core.access import platform_admin
+    return platform_admin(user)
 
 
 def _is_owner(user):
-    if _is_staff(user):
-        return True
-    if not user or not getattr(user, "is_authenticated", False):
-        return False
-    return user.memberships.filter(role="owner").exists()
+    from core.access import owner
+    return owner(user)
 
 
 def hub_version(request):

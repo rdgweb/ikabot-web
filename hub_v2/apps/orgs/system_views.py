@@ -14,7 +14,8 @@ from .models import Organization
 
 class SystemOnly(LoginRequiredMixin, View):
     def dispatch(self, request, *args, **kwargs):
-        if request.user.is_authenticated and not (request.user.is_staff or request.user.is_superuser):
+        from core.access import platform_admin
+        if request.user.is_authenticated and not platform_admin(request.user):
             raise Http404()
         return super().dispatch(request, *args, **kwargs)
 

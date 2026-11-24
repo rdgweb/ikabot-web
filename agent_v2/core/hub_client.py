@@ -99,6 +99,14 @@ class HubClient:
 
     # ── Registration & Heartbeat ──
 
+    def require_operation(self) -> None:
+        from .operation import OperationBlocked
+        # No positive cache: expiration/revocation applies at the next outbound
+        # game request, including a runner that already holds credentials.
+        data = self._get("/api/agent/operation/")
+        if data.get("operation_allowed") is not True:
+            raise OperationBlocked("Operação bloqueada pelo Hub: " + str(data.get("reason") or "autorização indisponível"))
+
     def register(self) -> dict:
         """POST /api/agent/register"""
         return self._post("/api/agent/register", {

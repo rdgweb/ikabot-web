@@ -7,6 +7,7 @@ import hmac
 from ipaddress import ip_address, ip_network
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
@@ -31,6 +32,14 @@ class AgentTokenAuthentication(BaseAuthentication):
         if shared and getattr(settings, "AGENT_SHARED_TOKEN_ENABLED", True) and hmac.compare_digest(token, shared):
             # N-106: the installation's single key, kept while the agents move to their own keys
             auth_kind = "agent"
+            # A legacy secret is restricted to a known node of the installation.
+            # It can no longer enroll arbitrary nodes or speak for a customer.
+            from apps.accounts.models import Node
+            from apps.orgs.services import DEFAULT_SLUG
+            try:
+                node = Node._base_manager.select_related("organization").get(pk=self._get_node_id(request), organization__slug=DEFAULT_SLUG)
+            except (Node.DoesNotExist, ValueError, ValidationError):
+                raise AuthenticationFailed("Invalid agent token.")
             self._remember_shared_key_use(request)
         else:
             node_id = self._get_node_id(request)
@@ -59,6 +68,7 @@ class AgentTokenAuthentication(BaseAuthentication):
             from apps.orgs import scope
 
             request._request.agent_node_id = str(node.pk)
+            request._request.agent_node = node
             scope.activate(node.organization, deny=node.organization is None)
         return (AnonymousUser(), auth_kind)
 

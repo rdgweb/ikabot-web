@@ -12,6 +12,12 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     services:
+      access-redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=5s --health-retries=10
       retention-db:
         image: mariadb:11
         env:
@@ -81,6 +87,12 @@ jobs:
         run: |
           python hub_v2/manage.py test apps.settings_app.tests_usage apps.settings_app.tests_maintenance --settings=config.settings.test --noinput
           TEST_MARIADB=1 python hub_v2/manage.py test apps.settings_app.tests_usage --settings=config.settings.test --noinput
+
+      - name: Test access policy and plan enforcement
+        run: |
+          python hub_v2/manage.py test apps.users.tests_access_policy apps.orgs.tests_scope apps.orgs.tests_owner apps.accounts.tests_n106_keys apps.accounts.tests_n131 apps.billing.tests apps.jobs.tests_n106_transport --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.users.tests_access_policy apps.orgs.tests_scope apps.orgs.tests_owner apps.accounts.tests_n106_keys apps.accounts.tests_n131 apps.billing.tests --settings=config.settings.test --noinput
+          python agent_v2/tests/test_operation_policy.py
 
       - name: Set up Node for browser regression tests
         uses: actions/setup-node@v4

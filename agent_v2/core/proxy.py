@@ -38,6 +38,7 @@ class StrictProxySession(requests.Session):
     def __init__(self, proxy_url: str = ""):
         super().__init__()
         self._proxy_url = proxy_url
+        self.operation_guard = None
 
     def send(self, request, **kwargs):
         # Aplica timeout default se caller não passou — evita hang infinito.
@@ -46,6 +47,8 @@ class StrictProxySession(requests.Session):
         if kwargs.get("timeout") is None:
             kwargs["timeout"] = DEFAULT_TIMEOUT_SECONDS
         if self._is_game_request(request.url):
+            if self.operation_guard is not None:
+                self.operation_guard()
             if self._proxy_url:
                 kwargs["proxies"] = {
                     "http": self._proxy_url,

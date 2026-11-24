@@ -235,8 +235,13 @@ def next_request(machine):
     from .models import AgentProvisionRequest
 
     with transaction.atomic():
-        job = (AgentProvisionRequest._base_manager.select_for_update().select_related("node")
-               .filter(docker_host=machine, status="queued").order_by("created_at").first())
+        from core.auth.agent_policy import operation_state
+        candidates = (AgentProvisionRequest._base_manager.select_for_update().select_related("node__organization")
+                      .filter(docker_host=machine, status="queued").order_by("created_at"))
+        # An expired tenant must not receive a new platform agent or block
+        # another tenant's provisioning/removal behind it in the queue.
+        job = next((item for item in candidates if item.action != "create" or item.node is None
+                    or operation_state(item.node)["operation_allowed"]), None)
         if job is None:
             return None
         payload = {"id": str(job.pk), "action": job.action, "node_id": str(job.node_ref)}

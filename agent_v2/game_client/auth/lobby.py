@@ -82,6 +82,8 @@ class LobbyAuthenticator:
 
     def __init__(self, session: requests.Session, hub: HubClient, user_agent: str, context: dict | None = None):
         self.session = session
+        if hasattr(session, "operation_guard"):
+            session.operation_guard = getattr(hub, "require_operation", None)
         self.hub = hub
         self.user_agent = user_agent
         self._context = dict(context) if context else None

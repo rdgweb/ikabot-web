@@ -6,6 +6,7 @@ from .api.agent import (
     AgentHeartbeatView,
     AgentRegisterView,
     AgentSessionView,
+    AgentOperationView,
 )
 from .api.supervisor import (
     SupervisorHeartbeatView,
@@ -18,6 +19,7 @@ from .api.supervisor import (
 app_name = "agent-accounts"
 
 urlpatterns = [
+    path("operation/", AgentOperationView.as_view(), name="operation"),
     path("supervisor/heartbeat/", SupervisorHeartbeatView.as_view(), name="supervisor-heartbeat"),
     path("supervisor/updates/next/", SupervisorUpdateNextView.as_view(), name="supervisor-update-next"),
     path("supervisor/updates/<uuid:update_id>/status/", SupervisorUpdateStatusView.as_view(), name="supervisor-update-status"),

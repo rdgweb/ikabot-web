@@ -28,7 +28,8 @@ class RetentionPolicyForm(forms.Form):
 
 class StaffOnly(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
-        return self.request.user.is_superuser or self.request.user.is_staff
+        from core.access import platform_admin
+        return platform_admin(self.request.user)
 
 
 class RetentionPolicyView(StaffOnly, View):

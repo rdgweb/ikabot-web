@@ -64,13 +64,8 @@ class AgentRegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        node, created = Node.objects.get_or_create(
-            pk=data["node_id"],
-            defaults={
-                "name": data.get("agent_name", "") or str(data["node_id"])[:8],
-                "active": True,
-            },
-        )
+        node = request._request.agent_node
+        created = False
         if created:
             logger.info("Auto-created node %s on first registration", node.pk)
             from apps.audit.services import record
@@ -106,9 +101,8 @@ class AgentRegisterView(APIView):
             "proxy": node.proxy,
             "active": node.active,
         }
-        return Response(
-            AgentRegisterResponseSerializer(response_data).data,
-        )
+        from core.auth.agent_policy import operation_state
+        return Response({**AgentRegisterResponseSerializer(response_data).data, **operation_state(node)})
 
 
 class AgentHeartbeatView(APIView):
@@ -158,6 +152,10 @@ class AgentHeartbeatView(APIView):
                 update_fields[field] = value
 
         updated = Node.objects.filter(pk=node_id).update(**update_fields)
+        from core.auth.agent_policy import operation_state
+        operation = operation_state(request._request.agent_node)
+        if updated and not operation["operation_allowed"]:
+            return Response({"ok": True, **operation})
 
         # N-96: the heartbeat is what keeps the proxy list true. A heartbeat without an
         # exit IP comes from an agent paused because its proxy stopped answering: check
@@ -223,7 +221,18 @@ class AgentHeartbeatView(APIView):
             except Exception as exc:
                 logger.warning("Failed to recover stale jobs for node %s: %s", node_id, exc)
 
-        return Response({"ok": True})
+        from core.auth.agent_policy import operation_state
+        return Response({"ok": True, **operation_state(request._request.agent_node)})
+
+
+class AgentOperationView(APIView):
+    """GET: current authorization; no credentials or game operations."""
+    authentication_classes = [AgentTokenAuthentication]
+    permission_classes = [IsAgent]
+
+    def get(self, request):
+        from core.auth.agent_policy import operation_state
+        return Response(operation_state(request._request.agent_node))
 
 
 class AgentConfigView(APIView):

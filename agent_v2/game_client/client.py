@@ -111,6 +111,7 @@ class GameClient(IslandActions):
 
         # HTTP session — all game requests go through proxy
         self.session = StrictProxySession(proxy_url)
+        self.session.operation_guard = getattr(hub, "require_operation", None)
         self.user_agent = user_agent or random.choice(USER_AGENTS)
         self.session.headers["User-Agent"] = self.user_agent
 

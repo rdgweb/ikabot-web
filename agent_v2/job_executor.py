@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def _is_terminal_conflict(exc: requests.HTTPError) -> bool:
-    return exc.response is not None and exc.response.status_code in (404, 409)
+    return exc.response is not None and exc.response.status_code in (403, 404, 409)
 
 
 class JobHeartbeatThread(threading.Thread):

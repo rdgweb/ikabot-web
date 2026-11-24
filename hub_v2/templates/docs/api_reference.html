@@ -1,35 +1,7 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ api_title }} v{{ api_version }}</title>
-  <style>
-    body {
-      margin: 0;
-      background: #f4efe6;
-      color: #1f2937;
-      font-family: "Segoe UI", sans-serif;
-    }
-    #app {
-      min-height: 100vh;
-    }
-  </style>
-</head>
-<body>
-  <div id="app"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-  <script>
-    Scalar.createApiReference('#app', {
-      url: '{{ schema_url }}',
-      proxyUrl: '',
-      pageTitle: '{{ api_title }}',
-      theme: 'kepler',
-      defaultHttpClient: {
-        targetKey: 'python',
-        clientKey: 'requests'
-      }
-    })
-  </script>
-</body>
-</html>
+{% extends base_template|default:"base.html" %}
+{% block title %}Documentação da API{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-2">Documentação da API</h1><p class="text-sm text-muted mb-5">Hub {{ api_version }} · referência interna para administradores da plataforma</p>
+<section class="card p-5 mb-5"><h2 class="font-semibold mb-2">Autenticação e alcance</h2><p class="text-sm">Cada agent usa o token individual do seu nó nos cabeçalhos X-Agent-Token e X-Agent-Node-ID. As operações validam o nó, a conta e a organização. Um token não concede acesso a outra organização. O supervisor usa sua credencial de host.</p><p class="text-sm mt-2">Plano/teste encerrado impede operação; diagnóstico de conexão e consulta da autorização permanecem disponíveis para detectar regularização. Isenção e a carência contratada seguem a política do plano. Ações já enviadas ao jogo não podem ser desfeitas pelo bloqueio.</p><a href="{{ schema_url }}" class="btn btn-secondary mt-3" hx-boost="false">Consultar esquema OpenAPI</a></section>
+{% for group in api_groups %}<section class="card p-5 mb-4"><h2 class="font-semibold mb-3">{{ group.name }}</h2><div style="overflow-x:auto"><table class="data-table w-full text-sm"><thead><tr><th>Método</th><th>Caminho</th><th>Autenticação</th><th>Descrição</th></tr></thead><tbody>{% for route in group.routes %}<tr><td><b>{{ route.method }}</b></td><td><code>{{ route.path }}</code></td><td>{{ route.authentication }}</td><td style="max-width:36rem;white-space:pre-line">{{ route.description }}</td></tr>{% endfor %}</tbody></table></div></section>{% endfor %}
+{% endblock %}

@@ -28,17 +28,13 @@ def default_organization_id():
 
 
 def role_for(user) -> str:
-    """The role a user of the single-operator hub gets: the groups it already has decide."""
+    """Default for legacy creation; ordinary users need an explicit role to operate."""
     from .models import Membership
 
-    if user.is_superuser or user.is_staff:
+    from core.access import platform_admin
+    if platform_admin(user):
         return Membership.OWNER
-    groups = set(user.groups.values_list("name", flat=True))
-    if "admin" in groups:
-        return Membership.OWNER
-    if "viewer" in groups and "operator" not in groups:
-        return Membership.VIEWER
-    return Membership.OPERATOR   # today a logged user without group can do everything an operator does
+    return Membership.VIEWER  # explicit membership/assignment is required to operate
 
 
 def ensure_membership(user):
@@ -238,6 +234,5 @@ def create_member_invite(*, organization, email: str, role: str, created_by):
 def role_of(user, organization) -> str:
     if user is None or organization is None or not getattr(user, "is_authenticated", False):
         return ""
-    from .models import Membership
-
-    return Membership.objects.filter(user=user, organization=organization).values_list("role", flat=True).first() or ""
+    from core.access import organization_role
+    return organization_role(user, organization)

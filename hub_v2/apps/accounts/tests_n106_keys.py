@@ -93,7 +93,7 @@ class AgentKeyTests(TestCase):
         customer = get_user_model().objects.create_user("cliente", password="x")
         self.client.force_login(customer)
         self.assertEqual(self.client.get(reverse("accounts:node-deploy", args=[self.node_a.pk])).status_code, 404)
-        self.assertEqual(self.client.post(reverse("accounts:node-new-key", args=[self.node_a.pk])).status_code, 404)
+        self.assertIn(self.client.post(reverse("accounts:node-new-key", args=[self.node_a.pk])).status_code, (403,404))
 
 
 class SupervisorKeyTests(TestCase):

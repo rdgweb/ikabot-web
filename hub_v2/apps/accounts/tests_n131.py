@@ -157,3 +157,13 @@ class PlatformAgentTests(TestCase):
         other = DockerHost._base_manager.create(name="outra", organization=default_organization(), last_seen_at=timezone.now())
         headers = {"HTTP_X_IKABOT_HOST_ID": str(other.pk), "HTTP_X_IKABOT_HOST_TOKEN": other.new_enrollment_token}
         self.assertIsNone(self.client.get("/api/agent/supervisor/provision/next/", **headers).json()["provision"])
+
+    def test_expired_plan_does_not_release_platform_agent_credentials(self):
+        self._subscribe(days_left=0.1)
+        self._proxies_on()
+        self._agent()
+        self.account.refresh_from_db()
+        BillingAccount.objects.filter(organization=self.account.organization).update(paid_until=timezone.now()-timedelta(days=4))
+        response=self._supervisor("/api/agent/supervisor/provision/next/")
+        self.assertIsNone(response.json()["provision"])
+        self.assertTrue(AgentProvisionRequest._base_manager.filter(action="create",status="queued").exists())

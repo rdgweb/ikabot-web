@@ -74,7 +74,11 @@ def build_payload(job: Job) -> dict:
 def dispatch_job(job: Job, eta: datetime | None = None) -> None:
     from apps.accounts.models import Node
 
-    transport = Node._base_manager.filter(pk=job.node_id).values_list("transport", flat=True).first()
+    node = Node._base_manager.select_related("organization").filter(pk=job.node_id).first()
+    from core.auth.agent_policy import operation_state
+    if node is None or not operation_state(node)["operation_allowed"]:
+        return  # queued work is preserved; never send it to the broker while blocked
+    transport = node.transport
     if transport == Node.TRANSPORT_HTTPS:
         # N-106 3b-2: the job stays in the database and the node's agent claims it over HTTPS
         # when it is due; nothing goes to the broker.

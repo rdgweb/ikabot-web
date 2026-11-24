@@ -8,27 +8,19 @@ from django_filters.views import FilterView
 
 
 class StaffRequiredMixin(UserPassesTestMixin):
-    """Restrict access to staff/admin users or users in the 'admin' group."""
+    """Restrict access to the platform team."""
 
     def test_func(self):
-        user = self.request.user
-        if not user.is_authenticated:
-            return False
-        if user.is_superuser or user.is_staff:
-            return True
-        return user.groups.filter(name="admin").exists()
+        from core.access import platform_admin
+        return platform_admin(self.request.user)
 
 
 class OperatorRequiredMixin(UserPassesTestMixin):
-    """Restrict access to operators, admin, or staff."""
+    """Use the current organization role, or the platform team."""
 
     def test_func(self):
-        user = self.request.user
-        if not user.is_authenticated:
-            return False
-        if user.is_superuser or user.is_staff:
-            return True
-        return user.groups.filter(name__in=["admin", "operator"]).exists()
+        from core.access import operator
+        return operator(self.request.user, getattr(self.request, "organization", None))
 
 
 class HtmxPartialMixin:

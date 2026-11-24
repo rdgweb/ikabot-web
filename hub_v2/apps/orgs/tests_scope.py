@@ -109,7 +109,9 @@ class OrganizationScopeTests(TestCase):
     @override_settings(AGENT_TOKEN="test-agent-token", AGENT_ALLOWED_IPS="")
     def test_the_agent_api_is_not_narrowed_by_a_person(self):
         node = self.data["outro"]["node"]
-        response = self.client.get(reverse("agent-accounts:config"), {"node_id": str(node.pk)}, HTTP_X_AGENT_TOKEN="test-agent-token")
+        key = node.issue_agent_token()
+        node.save()
+        response = self.client.get(reverse("agent-accounts:config"), {"node_id": str(node.pk)}, HTTP_X_AGENT_TOKEN=key, HTTP_X_AGENT_NODE_ID=str(node.pk))
         self.assertEqual(response.status_code, 200)
         self.assertEqual([acc["label"] for acc in response.json()["accounts"]], ["Conta B"])
 
@@ -129,5 +131,6 @@ class PlatformPagesTests(TestCase):
     def test_staff_still_reaches_them(self):
         staff = get_user_model().objects.create_user("rodrigo", password="x", is_staff=True)
         self.client.force_login(staff)
-        for url in ("/notes/", "/settings/", "/users/", "/proxy/"):
+        for url in ("/notes/", "/settings/", "/proxy/"):
             self.assertIn(self.client.get(url).status_code, (200, 302), url)
+        self.assertEqual(self.client.get("/users/").status_code,404)

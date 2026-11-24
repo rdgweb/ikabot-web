@@ -12,8 +12,9 @@ class IsAgent(BasePermission):
         if request.auth != "agent":
             return False
         bound = getattr(request._request, "agent_node_id", None)
-        if bound is None:
-            return True                       # the installation's single key (being phased out)
+        node = getattr(request._request, "agent_node", None)
+        if bound is None or node is None:
+            return False
         # N-106: an agent with its own key only speaks for its own node
         mentioned = {
             str(request.META.get("HTTP_X_AGENT_NODE_ID", "") or "").strip(),
@@ -26,29 +27,31 @@ class IsAgent(BasePermission):
         if node_kwarg:
             mentioned.add(str(node_kwarg))
         mentioned.discard("")
-        return mentioned <= {bound}
+        if not mentioned <= {bound}:
+            return False
+        from .agent_policy import authorize_operation, authorize_resources
+        authorize_resources(request, view, node)
+        authorize_operation(request, view, node)
+        return True
 
 
 class IsAdminUser(BasePermission):
     """Allow access only to admin users (staff or superuser)."""
 
     def has_permission(self, request, view):
-        return (
-            request.user
-            and request.user.is_authenticated
-            and request.user.is_staff
-        )
+        from core.access import platform_admin
+        from rest_framework.exceptions import NotFound
+        if not platform_admin(request.user):
+            raise NotFound()
+        return True
 
 
 class IsOperator(BasePermission):
     """Allow access to operators (admin group or operator group)."""
 
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-        if request.user.is_staff:
-            return True
-        return request.user.groups.filter(name="operator").exists()
+        from core.access import operator
+        return operator(request.user, getattr(request._request, "organization", None))
 
 
 class IsViewer(BasePermission):

@@ -34,7 +34,8 @@ OPEN_TO_EVERYONE = ("/settings/tour/done/", "/settings/tour/state/")   # the swi
 
 
 def is_platform_staff(user) -> bool:
-    return bool(user.is_superuser or user.is_staff)
+    from core.access import platform_admin
+    return platform_admin(user)
 
 
 class PlatformPagesMiddleware:
@@ -43,6 +44,12 @@ class PlatformPagesMiddleware:
 
     def __call__(self, request):
         path = request.path
+        from core.access import platform_owner
+        if (path.startswith("/django-admin/") or
+                (path.startswith("/users/") and not path.startswith("/users/convites/"))):
+            if not platform_owner(getattr(request, "user", None)):
+                from django.http import Http404
+                raise Http404()
         if path.startswith(PLATFORM_ONLY) and not path.startswith(OPEN_TO_EVERYONE):
             user = getattr(request, "user", None)
             if user is not None and user.is_authenticated and not is_platform_staff(user):

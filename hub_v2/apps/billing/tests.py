@@ -99,7 +99,7 @@ class EnforcementTests(TestCase):
     def test_a_paused_organization_gets_no_jobs_until_it_pays(self):
         account = account_for(self.org)
         BillingAccount.objects.filter(pk=account.pk).update(trial_ends_at=timezone.now() - timedelta(days=1))
-        self.assertEqual(self._claim().json()["jobs"], [])
+        self.assertEqual(self._claim().status_code, 403)
         self.assertTrue(Job._base_manager.filter(pk=self.job.pk, status="queued").exists())         # nothing lost
         BillingAccount.objects.filter(pk=account.pk).update(status=BillingAccount.ACTIVE, paid_until=timezone.now() + timedelta(days=20))
         self.assertEqual(len(self._claim().json()["jobs"]), 1)
@@ -310,7 +310,8 @@ class WebhookTests(TestCase):
         node = Node.objects.create(name="agente-w", organization=self.org)
         game = Account.objects.create(node=node, label="C", email="w@example.com", password_enc="x", organization=self.org)
         for i in range(6):
-            GameAccount.objects.create(account=game, lobby_account_id=1, server_id=f"w{i}", name=f"W{i}", server_language="br", server_number=i)
+            world = GameAccount.objects.create(account=game, lobby_account_id=1, server_id=f"w{i}", name=f"W{i}", server_language="br", server_number=i)
+            GameAccount.objects.filter(pk=world.pk).update(created_at=timezone.now()+timedelta(seconds=i))
         with patch("apps.billing.services._notify") as notify:
             self._send("PAYMENT_RECEIVED", {"object": "payment", "id": "pay_next", "subscription": "sub_9",
                                             "dueDate": timezone.localdate().isoformat()})

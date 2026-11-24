@@ -1,15 +1,12 @@
 from django import forms
-from django.contrib.auth.models import User, Group
+from django.contrib.auth.models import User
+from apps.orgs.models import Membership, Organization
 
 
 class UserCreateForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput(attrs={"class": "form-input"}))
-    group = forms.ModelChoiceField(
-        queryset=Group.objects.all(),
-        required=False,
-        label="Grupo",
-        widget=forms.Select(attrs={"class": "form-input"}),
-    )
+    organization = forms.ModelChoiceField(queryset=Organization.objects.all(), label="Organização", widget=forms.Select(attrs={"class": "form-input"}))
+    role = forms.ChoiceField(choices=Membership.ROLE_CHOICES, label="Papel na organização", widget=forms.Select(attrs={"class": "form-input"}))
 
     class Meta:
         model = User
@@ -25,10 +22,9 @@ class UserCreateForm(forms.ModelForm):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data["password"])
         if commit:
+            user._own_organization = True
             user.save()
-            group = self.cleaned_data.get("group")
-            if group:
-                user.groups.add(group)
+            Membership.objects.create(user=user, organization=self.cleaned_data["organization"], role=self.cleaned_data["role"])
         return user
 
 
@@ -37,12 +33,6 @@ class UserEditForm(forms.ModelForm):
         required=False,
         widget=forms.PasswordInput(attrs={"class": "form-input"}),
         help_text="Deixe em branco para manter a senha atual.",
-    )
-    group = forms.ModelChoiceField(
-        queryset=Group.objects.all(),
-        required=False,
-        label="Grupo",
-        widget=forms.Select(attrs={"class": "form-input"}),
     )
 
     class Meta:
@@ -55,10 +45,11 @@ class UserEditForm(forms.ModelForm):
             "last_name": forms.TextInput(attrs={"class": "form-input"}),
         }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance.pk:
-            self.fields["group"].initial = self.instance.groups.first()
+    def clean_is_active(self):
+        active = self.cleaned_data["is_active"]
+        if self.instance.is_superuser and not active:
+            raise forms.ValidationError("O administrador principal não pode ser desativado nesta tela.")
+        return active
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -67,8 +58,4 @@ class UserEditForm(forms.ModelForm):
             user.set_password(new_pw)
         if commit:
             user.save()
-            user.groups.clear()
-            group = self.cleaned_data.get("group")
-            if group:
-                user.groups.add(group)
         return user

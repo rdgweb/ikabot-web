@@ -17,6 +17,7 @@ tmp/
 .claude/
 .codex_tmp/
 docs/
-templates/docs/
+!templates/docs/
+!templates/docs/**
 nul
 token_compare_trace.log
