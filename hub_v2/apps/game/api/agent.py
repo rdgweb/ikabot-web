@@ -860,7 +860,8 @@ class SolveCaptchaView(APIView):
                     raise LookupError("sem conta")
                 answer = result if isinstance(result, str) else (result.get("solution") or result.get("result")
                                                                  or result.get("text") or "") if isinstance(result, dict) else ""
-                CaptchaChallenge.objects.create(node=request._request.agent_node, 
+                CaptchaChallenge.objects.create(
+                    node=request._request.agent_node,
                     captcha_type="lobby" if captcha_type == "lobby" else "piracy" if captcha_type == "pirate" else "unknown",
                     status="solved" if answer else "failed", solution=str(answer)[:512], solve_method="auto",
                     solved_at=timezone.now() if answer else None, error="" if answer else "Sem resposta do ikabotapi",
@@ -974,7 +975,8 @@ class CaptchaChallengeCreateView(APIView):
                     game_account = GameAccount.objects.get(pk=game_account_id)
                 except GameAccount.DoesNotExist:
                     logger.warning("CaptchaChallenge: GameAccount %s nao encontrado", game_account_id)
-            solved = CaptchaChallenge.objects.create(node=request._request.agent_node, 
+            solved = CaptchaChallenge.objects.create(
+                node=request._request.agent_node,
                 captcha_type=challenge_type,
                 image_data=image_b64,
                 status="solved",
@@ -998,7 +1000,8 @@ class CaptchaChallengeCreateView(APIView):
                 logger.warning("CaptchaChallenge: GameAccount %s nao encontrado", game_account_id)
 
         expires_at = timezone.now() + timedelta(seconds=captcha_cfg.timeout_sec)
-        challenge = CaptchaChallenge.objects.create(node=request._request.agent_node, 
+        challenge = CaptchaChallenge.objects.create(
+            node=request._request.agent_node,
             captcha_type=challenge_type,
             image_data=image_b64,
             status="pending",

@@ -29,4 +29,3 @@ def operator(user, organization=None):
 
 def owner(user, organization=None):
     return platform_admin(user) or organization_role(user, organization) == "owner"
-
