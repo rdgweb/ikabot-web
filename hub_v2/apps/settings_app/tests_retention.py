@@ -70,6 +70,19 @@ class RetentionTests(RetentionData):
         self.assertFalse(JobRetentionReceipt.objects.exists())
         self.assertEqual(job.logs.count(), 1)
 
+    def test_confirmation_only_saves_permission_to_start_without_processing(self):
+        from .retention import confirm_run
+        self.job()
+        run = preview(self.user)
+        with self.assertRaises(ValueError):
+            confirm_run(run.pk, self.user)
+        confirmed = confirm_run(run.pk, self.user, backup=True)
+        self.assertEqual(confirmed.status, "running")
+        self.assertTrue(confirmed.backup_confirmed)
+        self.assertEqual(confirmed.processed, {})
+        self.assertFalse(JobRetentionReceipt.objects.exists())
+        self.assertEqual(JobLog.objects.count(), 1)
+
     def test_changed_window_does_not_skip_remaining_jobs(self):
         from django.db import OperationalError
         from . import retention
@@ -367,6 +380,28 @@ class RetentionInBackgroundTests(RetentionData):
         self.assertEqual(run.processed["last_retry"]["stage"], "jobs")
         self.assertEqual(JobRetentionReceipt.objects.count(), 1)
         self.assertEqual(job.inputs_json, '{"important": "keep"}')
+
+    def test_first_batch_after_confirmation_uses_background_retry(self):
+        from django.db import OperationalError
+        from . import retention
+        self.job()
+        run = preview(self.user)
+        lock = retention._lock_job_rows
+        attempts = []
+        def flaky(ids):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise OperationalError(1020, "changed row")
+            return lock(ids)
+        self.client.force_login(self.user)
+        with patch.object(retention, "_lock_job_rows", flaky), patch.object(retention, "BUSY_WAIT_SECONDS", 0):
+            response = self.client.post(reverse("settings_app:retention-run", args=[run.pk]),
+                                        {"action": "start", "backup": "yes", "scope": "installation"})
+        self.assertEqual(response.status_code, 302)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "done")
+        self.assertEqual(run.processed["jobs"], 1)
+        self.assertEqual(run.processed["last_retry"]["code"], 1020)
 
     def test_retry_limit_pauses_with_safe_persistent_diagnostics(self):
         from django.db import OperationalError

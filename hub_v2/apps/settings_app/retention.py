@@ -121,27 +121,41 @@ def _batch_stage(kind):
         raise
 
 
+def _validated_run(run_id, user, *, start=False, backup=False):
+    # Caller holds a transaction. Serialize requests, including policy changes.
+    setting, _ = AppSetting.objects.get_or_create(pk=POLICY_KEY, defaults={"value": json.dumps(DEFAULT_POLICY)})
+    setting = AppSetting.objects.select_for_update().get(pk=setting.pk)
+    run = RetentionRun.objects.select_for_update().get(pk=run_id, user=user)
+    policy = policy_value(setting.value)
+    if policy != run.policy or not policy["enabled"]:
+        raise ValueError("A política mudou ou está desativada. Gere uma nova prévia.")
+    if run.status == "done":
+        return run
+    if run.status == "preview":
+        if not start or not backup:
+            raise ValueError("Confirme a prévia e que existe um backup restaurável antes de executar.")
+        if timezone.now() - run.created_at > timedelta(hours=1):
+            raise ValueError("Esta prévia expirou. Gere outra antes de executar.")
+        run.backup_confirmed = True
+        run.status = "running"
+    if run.status != "running":
+        raise ValueError("Execução inválida.")
+    return run
+
+
+def confirm_run(run_id, user, *, backup=False):
+    """Confirm without deleting: the background runner handles even the first batch."""
+    with unscoped(), transaction.atomic():
+        run = _validated_run(run_id, user, start=True, backup=backup)
+        run.save(update_fields=["status", "backup_confirmed"])
+        return run
+
+
 def process_batch(run_id, user, *, start=False, backup=False):
     with unscoped(), transaction.atomic():
-        # Serialize maintenance requests, including concurrent tabs and policy changes.
-        setting, _ = AppSetting.objects.get_or_create(pk=POLICY_KEY, defaults={"value": json.dumps(DEFAULT_POLICY)})
-        setting = AppSetting.objects.select_for_update().get(pk=setting.pk)
-        run = RetentionRun.objects.select_for_update().get(pk=run_id, user=user)
-        policy = policy_value(setting.value)
-        if policy != run.policy or not policy["enabled"]:
-            raise ValueError("A política mudou ou está desativada. Gere uma nova prévia.")
+        run = _validated_run(run_id, user, start=start, backup=backup)
         if run.status == "done":
             return run
-        if run.status == "preview":
-            if not start or not backup:
-                raise ValueError("Confirme a prévia e que existe um backup restaurável antes de executar.")
-            if timezone.now() - run.created_at > timedelta(hours=1):
-                raise ValueError("Esta prévia expirou. Gere outra antes de executar.")
-            run.backup_confirmed = True
-            run.status = "running"
-        if run.status != "running":
-            raise ValueError("Execução inválida.")
-
         totals = dict(run.processed)
         queries = candidates(run)
         for kind in KINDS:

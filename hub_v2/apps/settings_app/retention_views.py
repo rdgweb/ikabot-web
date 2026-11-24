@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views import View
 
 from .models import AppSetting, RetentionRun
-from .retention import (DEFAULT_POLICY, POLICY_KEY, get_policy, pause, preview, process_batch, resume, resume_stalled,
+from .retention import (DEFAULT_POLICY, POLICY_KEY, confirm_run, get_policy, pause, preview, resume, resume_stalled,
                         runner_active, started_on_server)
 
 
@@ -75,7 +75,7 @@ class RetentionRunView(StaffOnly, View):
             return HttpResponseBadRequest("Confirme o alcance global: todas as organizações desta instalação.")
         try:
             if action == "start":
-                run = process_batch(pk, request.user, start=True, backup=request.POST.get("backup") == "yes")
+                run = confirm_run(pk, request.user, backup=request.POST.get("backup") == "yes")
                 if run.status == "running":
                     run = resume(run.pk)
             elif action == "pause":
