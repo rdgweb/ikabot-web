@@ -91,6 +91,7 @@ class DonateLoopRunner(BaseRunner):
             self.log(jid, "error", "Credenciais nao encontradas")
             return RunnerResult(success=False, data={"error": "missing_credentials"})
 
+        donation_attempted = False
         try:
             client = self.get_or_login_game_client(jid, aid, ga_id, creds)
             before = fetch_donation_project_state(client, int(city_id), donation_type)
@@ -207,6 +208,7 @@ class DonateLoopRunner(BaseRunner):
                     f"faltava_antes={before['remaining']:,} | sobra_proximo={next_carry_over:,}"
                 ),
             )
+            donation_attempted = True
             client.donate(island_id=before["island_id"], donation_type=donation_type, amount=donation_amount)
             after = fetch_donation_project_state(client, int(city_id), donation_type)
 
@@ -286,6 +288,18 @@ class DonateLoopRunner(BaseRunner):
                 },
             )
         except Exception as exc:
+            if self.is_network_error(exc):
+                # A missing response after submission cannot prove the donation failed.
+                # Wait for the next normal cycle instead of immediately spending again.
+                delay = max(300, base_delay) if donation_attempted else 300
+                result = self.network_error_result(jid, exc, reschedule_seconds=delay)
+                result.reschedule_inputs = self._next_inputs(
+                    inputs, next_carry_over if donation_attempted else carry_over_amount,
+                )
+                result.data.update(retry_delay=delay, donation_outcome_unknown=donation_attempted)
+                if donation_attempted:
+                    self.log(jid, "warn", "Doacao enviada sem confirmacao final. Sem repeticao imediata; verificar no proximo ciclo normal.")
+                return result
             exc_str = str(exc)
             # Transient game states that should reschedule silently (not mark as error)
             _TRANSIENT_PATTERNS = (

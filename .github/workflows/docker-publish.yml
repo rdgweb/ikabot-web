@@ -99,6 +99,14 @@ jobs:
           python hub_v2/manage.py test apps.users.tests_account apps.website.tests_signup --settings=config.settings.test --noinput
           TEST_MARIADB=1 python hub_v2/manage.py test apps.users.tests_account apps.website.tests_signup --settings=config.settings.test --noinput
 
+      - name: Test piracy conversion board and donation network recovery
+        run: |
+          python -m pip install -r agent_v2/requirements.txt
+          python hub_v2/manage.py test apps.piracy.tests --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.piracy.tests --settings=config.settings.test --noinput
+          cd agent_v2
+          PYTHONPATH=. python -m unittest discover -s tests -p test_donate_loop.py
+
       - name: Set up Node for browser regression tests
         uses: actions/setup-node@v4
         with:

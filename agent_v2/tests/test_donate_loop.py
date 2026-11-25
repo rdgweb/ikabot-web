@@ -1,7 +1,9 @@
 """N-130: the donation loop never tries to give more than the city has (construction keeps its part)."""
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+from requests.exceptions import ReadTimeout
 
 from runners.donate_loop import DonateLoopRunner
 from services.donation_automation import cap_donation, is_quantity_refused
@@ -50,6 +52,74 @@ class CityStockTests(unittest.TestCase):
         self.assertEqual(runner._reserved_for("j", "ga", "123", "crystal"), 70)
         runner.hub.get_construction_reservations.side_effect = RuntimeError("hub fora")
         self.assertEqual(runner._reserved_for("j", "ga", "123", "wood"), 0)
+
+
+class NetworkRetryTests(unittest.TestCase):
+    def test_game_client_never_reposts_donation_after_lost_response(self):
+        from game_client.client import GameClient
+        from game_client.exceptions import GameClientError
+        from requests.exceptions import ConnectionError
+
+        for error in (ReadTimeout("Read timed out"), ConnectionError("Connection reset")):
+            with self.subTest(error=type(error).__name__):
+                client = GameClient.__new__(GameClient)
+                client._enforce_delay = MagicMock()
+                client.session = MagicMock()
+                client.session.request.side_effect = error
+                with self.assertRaises(GameClientError):
+                    client._request("POST", "https://game.invalid", data={"action": "IslandScreen", "function": "donate"})
+                client.session.request.assert_called_once()
+
+    def test_read_requests_keep_their_network_retries(self):
+        from game_client.client import GameClient
+        client = GameClient.__new__(GameClient)
+        client._enforce_delay = MagicMock()
+        client.session = MagicMock()
+        response = MagicMock(status_code=200)
+        client.session.request.side_effect = [ReadTimeout("timeout"), response]
+        client.captcha_detector = MagicMock()
+        client.captcha_detector.check_response.return_value = False
+        with patch("game_client.client.time.sleep"):
+            self.assertIs(client._request("GET", "https://game.invalid"), response)
+        self.assertEqual(client.session.request.call_count, 2)
+
+    def runner_and_job(self):
+        runner = DonateLoopRunner.__new__(DonateLoopRunner)
+        runner.log = MagicMock()
+        runner.resolve_credentials = MagicMock(return_value={"email": "test"})
+        runner.get_or_login_game_client = MagicMock()
+        job = {"job_id": "j", "account_id": "a", "inputs": {
+            "city_id": "123", "donation_type": "wood", "donation_method": 2,
+            "method_value": 25, "carry_over_amount": 12, "random_wait_minutes": 0,
+        }}
+        return runner, job
+
+    def test_login_timeout_preserves_inputs_and_waits_five_minutes(self):
+        runner, job = self.runner_and_job()
+        runner.get_or_login_game_client.side_effect = ReadTimeout("Read timed out. (read timeout=30)")
+        result = runner.execute(job)
+        self.assertFalse(result.success)
+        self.assertEqual(result.reschedule_seconds, 300)
+        self.assertEqual(result.reschedule_inputs, job["inputs"])
+        self.assertTrue(result.data["retryable"])
+        self.assertFalse(result.data["donation_outcome_unknown"])
+
+    def test_submission_timeout_does_not_immediately_repeat_donation(self):
+        runner, job = self.runner_and_job()
+        client = runner.get_or_login_game_client.return_value
+        client.donate.side_effect = ReadTimeout("Read timed out")
+        runner._compute_donation_amount = MagicMock(return_value=100)
+        runner._fetch_city_resources = MagicMock(return_value={"wood": 1000})
+        runner._reserved_for = MagicMock(return_value=0)
+        with patch("runners.donate_loop.fetch_donation_project_state", return_value={
+            "remaining": 10000, "is_upgrading": False, "island_id": "77",
+        }), patch("runners.donate_loop.fetch_worker_baseline"), patch("runners.donate_loop.fetch_city_context", return_value={}):
+            result = runner.execute(job)
+        client.donate.assert_called_once()
+        self.assertFalse(result.success)
+        self.assertEqual(result.reschedule_seconds, 86400)
+        self.assertTrue(result.data["donation_outcome_unknown"])
+        self.assertEqual(result.reschedule_inputs["carry_over_amount"], 0)
 
 
 if __name__ == "__main__":

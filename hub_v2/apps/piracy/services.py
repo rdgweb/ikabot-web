@@ -15,7 +15,7 @@ import json
 import math
 import random
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 
 from django.db import transaction
 from django.utils import timezone
@@ -1121,7 +1121,7 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
         elif m.role == PiracyMember.PASSER:
             until = _converting_until(ga)
             if until > now.timestamp():
-                ready = timezone.localtime(datetime.fromtimestamp(until, tz=timezone.utc))
+                ready = timezone.localtime(datetime.fromtimestamp(until, tz=datetime_timezone.utc))
                 out.update(tone="warn", text=f"convertendo · pronta {ready:%H:%M}")
             elif route_out:
                 out.update(tone="warn" if route_out.status == PiracyRoute.SENT else "ok",

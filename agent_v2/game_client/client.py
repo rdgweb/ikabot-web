@@ -1303,24 +1303,29 @@ class GameClient(IslandActions):
         # (48h+ marcados como "running" sem heartbeat) em produção.
         kwargs.setdefault("timeout", 60)
 
-        for attempt in range(MAX_RETRIES):
+        # Donation POSTs are not idempotent: a lost response may follow a debit.
+        data = kwargs.get("data") or {}
+        donation = (method.upper() == "POST" and isinstance(data, dict)
+                    and data.get("action") == "IslandScreen" and data.get("function") == "donate")
+        max_attempts = 1 if donation else MAX_RETRIES
+        for attempt in range(max_attempts):
             try:
                 resp = self.session.request(method, url, **kwargs)
                 self._last_request_time = time.time()
             except requests.exceptions.ProxyError as e:
                 raise ProxyError(f"Proxy connection failed: {e}") from e
             except requests.exceptions.ConnectionError as e:
-                if attempt < MAX_RETRIES - 1:
+                if attempt < max_attempts - 1:
                     logger.warning(f"Connection error (attempt {attempt + 1}): {e}")
                     time.sleep(2 ** attempt)
                     continue
-                raise GameClientError(f"Connection failed after {MAX_RETRIES} attempts: {e}") from e
+                raise GameClientError(f"Connection failed after {max_attempts} attempts: {e}") from e
             except requests.exceptions.Timeout as e:
-                if attempt < MAX_RETRIES - 1:
+                if attempt < max_attempts - 1:
                     logger.warning(f"Timeout (attempt {attempt + 1}): {e}")
                     time.sleep(2 ** attempt)
                     continue
-                raise GameClientError(f"Request timed out after {MAX_RETRIES} attempts") from e
+                raise GameClientError(f"Request timed out after {max_attempts} attempts") from e
 
             # Check for captcha in response
             if self.captcha_detector.check_response(resp):

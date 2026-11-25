@@ -4,7 +4,7 @@ wins (crew > target crew x 1.1 / 0.9), never inside a lobby, the same pair once 
 raided by the champions."""
 import json
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -452,6 +452,25 @@ class TurnResetTests(Base):
         PiracyMonth.objects.filter(pk=month.pk).update(turn_at=timezone.now() + timedelta(minutes=10))
         self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         self.assertFalse(PiracyRoute.objects.exists())
+
+
+class ConvertingBoardTests(Base):
+    def test_passer_conversion_renders_in_local_time(self):
+        month = self.plan()
+        passer = month.members.filter(role="passer").first().game_account
+        until = int((timezone.now() + timedelta(minutes=20)).timestamp())
+        job = self.jobs[passer.pk]
+        inputs = json.loads(job.inputs_json)
+        inputs["_plan_convert_until"] = until
+        job.inputs_json = json.dumps(inputs)
+        job.save(update_fields=["inputs_json"])
+        result = services.board(month, {})
+        node = next(n for n in result["passers"] if n["ga"].pk == passer.pk)
+        expected = datetime.fromtimestamp(until, tz=timezone.get_current_timezone())
+        self.assertEqual(node["text"], f"convertendo · pronta {expected:%H:%M}")
+        response = self.client.get("/pirataria/", {"server": "s1-br"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "convertendo")
 
 
 class JobCardTests(Base):
