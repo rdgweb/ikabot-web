@@ -32,7 +32,7 @@
       <a href="{{ item.url }}"
          title="{{ item.name }}"
          class="sidebar-item"
-         hx-boost="true">
+         hx-boost="{% if item.full_page %}false{% else %}true{% endif %}">
         <i class="bi {{ item.icon }} flex-shrink-0"></i>
         <span class="sidebar-collapsible">{{ item.name }}</span>
       </a>

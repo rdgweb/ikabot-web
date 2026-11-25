@@ -69,7 +69,7 @@ def nav_context(request):
                 {"name": "Uso por organização", "url": "/settings/uso/", "icon": "bi-pie-chart", "perm": "staff"},
                 {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "principal"},
                 {"name": "Permissões e acessos", "url": "/users/permissoes/", "icon": "bi-person-lock", "perm": "access"},
-                {"name": "Documentação da API", "url": "/api/docs/", "icon": "bi-braces", "perm": "staff"},
+                {"name": "Documentação da API", "url": "/api/docs/", "icon": "bi-braces", "perm": "staff", "full_page": True},
                 {"name": "Organizações", "url": "/sistema/organizacoes/", "icon": "bi-buildings", "perm": "staff"},
                 {"name": "Convites", "url": "/users/convites/", "icon": "bi-envelope-paper", "perm": "staff"},
             ],

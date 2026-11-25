@@ -49,6 +49,10 @@ class ApiDocsView(TemplateView):
         from django.http import Http404
         if not platform_admin(request.user):
             raise Http404()
+        if request.headers.get("HX-Request") == "true":
+            response = HttpResponse(status=204)
+            response["HX-Redirect"] = resolve_url("api-docs")
+            return response
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

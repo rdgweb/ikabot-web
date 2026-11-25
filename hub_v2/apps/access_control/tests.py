@@ -185,6 +185,9 @@ class AccessControlTests(TestCase):
         self.assertContains(page, "Scalar.createApiReference")
         self.assertNotContains(page, "cdn.jsdelivr.net")
         self.assertContains(page, "withDefaultFonts:false")
+        boosted = self.client.get("/api/docs/", HTTP_HX_REQUEST="true", HTTP_HX_BOOSTED="true")
+        self.assertEqual(boosted.status_code, 204)
+        self.assertEqual(boosted["HX-Redirect"], "/api/docs/")
         schema = self.client.get("/api/schema/").json()
         self.assertGreaterEqual(len(schema["paths"]), 81)
         heartbeat = schema["paths"]["/api/agent/heartbeat/"]["post"]
