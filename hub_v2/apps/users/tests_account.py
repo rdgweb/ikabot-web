@@ -183,6 +183,17 @@ class PersonalAccountTests(TestCase):
         self.assertEqual(session.reason,"logout")
         self.assertIsNotNone(session.revoked_at)
 
+    def test_switching_accounts_does_not_leave_a_false_active_session(self):
+        key=self.client.cookies[settings.SESSION_COOKIE_NAME].value
+        response=self.client.post("/login/",{"username":self.other.username,"password":PASSWORD})
+        self.assertEqual(response.status_code,302)
+        old=UserSession.objects.get(session_key=key)
+        self.assertEqual(old.reason,"rotated")
+        self.assertIsNotNone(old.revoked_at)
+        new_key=self.client.cookies[settings.SESSION_COOKIE_NAME].value
+        self.assertEqual(self.client.get("/conta/").status_code,200)
+        self.assertEqual(UserSession.objects.get(session_key=new_key).user,self.other)
+
     @override_settings(SESSION_ENGINE="django.contrib.sessions.backends.cached_db")
     def test_revoked_session_cannot_be_resurrected_from_cache_or_saved_by_inflight_request(self):
         other,tracked=self.another_session()
