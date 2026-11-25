@@ -407,3 +407,30 @@ class ClearTargetedStateTests(unittest.TestCase):
         merged = {"_targeted_phase": "wait_abandon", "_targeted_temp_city_id": 96517}
         merged.update(cleaned)                                           # what the hub does with them
         self.assertFalse(str(merged.get("_targeted_phase") or "").strip())
+
+
+class PeriodSwitchTests(unittest.TestCase):
+    """N-224: day 08-22 with 1h missions, night with 8h: the mission ends by the switch — the biggest that fits."""
+
+    CFG = {"schedule_by_time": True, "day_start_hour": 8, "day_end_hour": 22, "day_mission_level": 9, "night_mission_level": 15}
+
+    def at(self, hour, minute=0):
+        from datetime import datetime as _dt
+        return _dt(2026, 11, 25, hour, minute, 30)
+
+    def test_seconds_to_the_switch_both_sides_and_over_midnight(self):
+        left = PIRACY_MODULE._seconds_to_switch
+        self.assertEqual(left(self.CFG, self.at(6)), 2 * 3600 - 30)        # night -> 08:00
+        self.assertEqual(left(self.CFG, self.at(21, 30)), 30 * 60 - 30)   # day -> 22:00
+        self.assertEqual(left(self.CFG, self.at(23)), 9 * 3600 - 30)       # after midnight -> 08:00
+        self.assertIsNone(left({"day_start_hour": 8, "day_end_hour": 8}, self.at(6)))
+
+    def test_the_biggest_mission_that_fits(self):
+        fit, left = PIRACY_MODULE._fitting_level, PIRACY_MODULE._seconds_to_switch
+        self.assertEqual(fit(15, 17, left(self.CFG, self.at(22))), 15)     # 22:00: the 8h night mission
+        self.assertEqual(fit(15, 17, left(self.CFG, self.at(6))), 11)      # 06:00: 2h, up to 08:00 (not 8h)
+        self.assertEqual(fit(9, 17, left(self.CFG, self.at(21, 30))), 7)   # 21:30: 30 min, not 1h into the night
+        self.assertEqual(fit(9, 17, left(self.CFG, self.at(10))), 9)       # the middle of the day: the configured 1h
+        self.assertEqual(fit(15, 9, left(self.CFG, self.at(22))), 9)       # the fortress caps it
+        self.assertIsNone(fit(15, 17, 60 - PIRACY_MODULE.SWITCH_TOLERANCE - 1))   # nothing fits: wait
+        self.assertEqual(fit(9, 17, None), 9)                              # not by time: as configured

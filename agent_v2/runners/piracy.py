@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -108,6 +108,40 @@ def _mission_level_for_time(inputs: dict, now_hour: int) -> int:
         is_day = now_hour >= day_start or now_hour < day_end
 
     return day_level if is_day else night_level
+
+
+SWITCH_TOLERANCE = 15 * 60   # N-224: a mission may end this long after the day/night switch (the ship comes back a bit late)
+
+
+def _seconds_to_switch(inputs: dict, now: datetime) -> int | None:
+    """N-224: seconds until the day/night period of schedule_by_time changes; None without two periods."""
+    try:
+        day_start = int(inputs.get("day_start_hour") or 8) % 24
+        day_end = int(inputs.get("day_end_hour") or 22) % 24
+    except (ValueError, TypeError):
+        return None
+    if day_start == day_end:
+        return None
+    best = None
+    for hour in (day_start, day_end):
+        moment = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if moment <= now:
+            moment = moment + timedelta(days=1)
+        left = int((moment - now).total_seconds())
+        best = left if best is None else min(best, left)
+    return best
+
+
+def _fitting_level(level: int, fortress_level: int, seconds_left: int | None) -> int | None:
+    """N-224: the biggest mission (up to the configured level and what the fortress allows) that ends by the period
+    switch, give or take SWITCH_TOLERANCE; None when not even the shortest fits (then the job waits for the switch)."""
+    available = sorted((lvl for lvl in _MISSION_DURATIONS if lvl <= min(level, fortress_level)), reverse=True) or [1]
+    if seconds_left is None:
+        return available[0]
+    for lvl in available:
+        if _MISSION_DURATIONS.get(lvl, 0) <= seconds_left + SWITCH_TOLERANCE:
+            return lvl
+    return None
 
 
 @register_runner(17)
@@ -744,6 +778,11 @@ class PiracyMissionRunner(BaseRunner):
         fortress_level = _to_int(state.get("fortress_level"), 1)
         available = sorted((lvl for lvl in _MISSION_DURATIONS if lvl <= fortress_level), reverse=True)
         effective_level = min(level, available[0] if available else 1)
+        if schedule_by_time:
+            fit = _fitting_level(effective_level, fortress_level, _seconds_to_switch(inputs, datetime.now()))
+            if fit is None:
+                return 0                                 # N-224: nothing ends before the period switch
+            effective_level = fit
         try:
             result = client.start_piracy_mission(city_id, effective_level)
             new_remaining = _to_int(result.get("time_remaining"), _MISSION_DURATIONS.get(effective_level, 1800))
@@ -1424,6 +1463,23 @@ class PiracyMissionRunner(BaseRunner):
                     f"Nível da missão ajustado de {mission_level} para {effective_level} "
                     f"(fortaleza nível {fortress_level})",
                 )
+
+            # N-224: by day/night, the mission ends by the period switch — the biggest one that fits; none fits:
+            # wait for the switch (a long night mission no longer runs into the day, nor a day one into the night)
+            if schedule_by_time:
+                left = _seconds_to_switch(inputs, datetime.now())
+                fit = _fitting_level(effective_level, fortress_level, left)
+                if fit is None:
+                    wait = max(60, (left or 0) + 30)
+                    self.log(jid, "info", f"Nenhuma missão termina antes da troca de período (em {wait // 60} min); "
+                                          f"espero a troca")
+                    self.save_game_client(game_account_id, client)
+                    return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs={**inputs, **_state_inputs},
+                                        data={"status": "waiting_period_switch"})
+                if fit != effective_level:
+                    self.log(jid, "info", f"Missão nível {effective_level} passaria da troca de período (em {(left or 0) // 60} min); "
+                                          f"mando a nível {fit}, a maior que cabe")
+                    effective_level = fit
 
             # N-211: a raid of the plan is due soon — no mission that would keep the ship away at that time
             route_at = _to_int(plan.get("route_at"), 0)
