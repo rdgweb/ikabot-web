@@ -21,6 +21,9 @@ def key(organization):
 def lock():
     AppSetting.objects.get_or_create(pk="access_management_lock")
     AppSetting.objects.select_for_update().get(pk="access_management_lock")
+    from .policy import _cache
+    if _cache.get() is not None:
+        _cache.get().clear()
 
 
 def fingerprint():
@@ -111,7 +114,10 @@ def prepare(actor, payload, organization=None):
             "expires_at": expires.isoformat() if expires else ""}
 
 
+@transaction.atomic
 def preview(actor, payload, organization=None):
+    lock()
+    actor = get_user_model().objects.get(pk=actor.pk)
     normalized = prepare(actor, payload, organization)
     before, after = set(), set()
     if normalized["action"] == "role":
@@ -153,6 +159,7 @@ def confirm(actor, token, organization=None):
     if cache is not None:
         cache.clear()
     lock()
+    actor = get_user_model().objects.get(pk=actor.pk)
     data = signing.loads(token, salt="access-preview", max_age=900)
     if data["actor"] != actor.pk or data["scope"] != key(organization) or data["revision"] != fingerprint():
         raise ValidationError("A prévia mudou ou já foi utilizada. Gere outra antes de confirmar.")

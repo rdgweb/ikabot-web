@@ -142,6 +142,13 @@ class AccessControlTests(TestCase):
         with self.assertRaises(ValidationError):
             confirm(self.owner, p["token"], self.org)
 
+    def test_confirmation_reloads_actor_after_deactivation(self):
+        role = self.role(organization=self.org)
+        p = preview(self.owner, {"action": "grant", "user_id": self.person_a.pk, "role_id": str(role.pk)}, self.org)
+        get_user_model().objects.filter(pk=self.owner.pk).update(is_active=False)
+        with self.assertRaises(ValidationError):
+            confirm(self.owner, p["token"], self.org)
+
     def test_role_creation_edit_and_history_use_confirmation(self):
         p = preview(self.owner, {"action": "role", "name": "Financeiro", "permissions": ["organization.billing.view", "organization.billing.manage"]}, self.org)
         self.assertFalse(Role.objects.filter(name="Financeiro").exists())

@@ -164,6 +164,10 @@ class MembersView(OrgPage):
         from apps.audit.services import record
         from apps.access_control.services import lock
         lock()
+        from django.contrib.auth import get_user_model
+        request.user = get_user_model().objects.get(pk=request.user.pk)
+        if not request.user.is_active:
+            raise Http404()
 
         if self.role != Membership.OWNER:
             raise Http404()
