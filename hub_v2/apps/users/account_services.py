@@ -201,7 +201,7 @@ def resend_signup(request, email):
         email = normalized_email(email)
         with transaction.atomic():
             email_lock()
-            user = get_user_model().objects.select_for_update().filter(email__iexact=email, is_active=False, memberships__isnull=True).first()
+            user = get_user_model().objects.select_for_update().filter(email__iexact=email, is_active=False, last_login__isnull=True, memberships__isnull=True).first()
             if not user:
                 return
             profile = profile_for(user)

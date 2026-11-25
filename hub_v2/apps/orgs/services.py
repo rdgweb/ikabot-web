@@ -229,9 +229,13 @@ def confirm_signup(token: str):
         if user is None or user.is_active or user.password[-12:] != data.get("h"):
             return None
         profile = profile_for(user)
-        if not profile.signup_pending or user.memberships.exists():
+        if not profile.signup_pending or user.last_login is not None or user.memberships.exists():
             return None
-        if user.email.lower() != data.get("e") or profile.email_generation != data.get("g"):
+        bound_email = "e" in data and "g" in data
+        if bound_email:
+            if user.email.lower() != data.get("e") or profile.email_generation != data.get("g"):
+                return None
+        elif "e" in data or "g" in data or profile.email_generation != 0:
             return None
         try:
             ensure_email_available(user.email, user)
@@ -240,7 +244,13 @@ def confirm_signup(token: str):
         user.is_active = True
         user.save(update_fields=["is_active"])
         organization = own_organization(user, data.get("o") or "")
-        mark_verified(user)
+        if bound_email:
+            mark_verified(user)
+        else:
+            # Preserve valid legacy activation links and their organization name, without
+            # claiming they prove the current email address (which the old token did not bind).
+            profile.signup_pending = False
+            profile.save(update_fields=["signup_pending", "updated_at"])
     return user, organization, data.get("l") or "pt"
 
 

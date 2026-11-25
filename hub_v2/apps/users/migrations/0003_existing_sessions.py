@@ -13,7 +13,7 @@ def identify_sessions(apps, schema_editor):
     User = apps.get_model(*settings.AUTH_USER_MODEL.split("."))
     Profile = apps.get_model("users", "UserProfile")
     Terms = apps.get_model("orgs", "TermsAcceptance")
-    for user in User.objects.filter(is_active=False, memberships__isnull=True):
+    for user in User.objects.filter(is_active=False, last_login__isnull=True, memberships__isnull=True):
         if Terms.objects.filter(user_id=user.pk).exists():
             Profile.objects.get_or_create(user_id=user.pk, defaults={"signup_pending": True})
     for row in Session.objects.filter(expire_date__gt=timezone.now()).iterator(chunk_size=100):

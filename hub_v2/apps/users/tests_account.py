@@ -229,6 +229,29 @@ class PersonalAccountTests(TestCase):
         self.assertIsNone(discovered.last_seen_at)
         row.refresh_from_db();self.assertEqual((row.session_data,row.expire_date),snapshot)
 
+    def test_previously_active_user_without_membership_is_not_a_pending_signup(self):
+        from apps.orgs.models import TermsAcceptance
+        from django.apps import apps
+        TermsAcceptance.objects.create(user=self.other,version="test")
+        Membership.objects.filter(user=self.other).delete()
+        get_user_model().objects.filter(pk=self.other.pk).update(is_active=False,last_login=timezone.now())
+        import_module("apps.users.migrations.0003_existing_sessions").identify_sessions(apps,None)
+        profile=profile_for(self.other)
+        self.assertFalse(profile.signup_pending)
+        with patch("apps.users.account_services.send_mail") as sender:
+            Client().post("/conta/cadastro/reenviar/",{"email":self.other.email})
+        sender.assert_not_called()
+
+    def test_legacy_signup_link_preserves_organization_without_claiming_unbound_email_proof(self):
+        from django.core import signing
+        from apps.orgs.services import SIGNUP_SALT
+        user=register(email="legacy@example.com",username="legacy-pending",password=PASSWORD,organization_name="Original alliance")
+        token=signing.dumps({"u":user.pk,"o":"Original alliance","l":"pt","h":user.password[-12:]},salt=SIGNUP_SALT)
+        result=confirm_signup(token)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[1].name,"Original alliance")
+        self.assertFalse(profile_for(result[0]).email_is_verified())
+
     def test_sensitive_actions_are_rate_limited(self):
         other,tracked=self.another_session()
         for _ in range(10):

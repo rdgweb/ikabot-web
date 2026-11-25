@@ -36,10 +36,12 @@ delivery happens outside that lock. Existing duplicate addresses are not silentl
 merged or edited. Confirmation rechecks ownership and uniqueness under the lock.
 
 Public signup resend has a generic response and only serves inactive, membership-free
-accounts explicitly marked signup_pending. It cannot reactivate a suspended member.
-Resending rotates the generation and invalidates previous links. Legacy signup links
-without the new email/generation binding require a resend; the error page links there.
-The migration recognizes historical pending registrations by inactive status, no membership
+accounts that have never logged in and are explicitly marked signup_pending. It cannot reactivate a suspended member.
+Resending rotates the generation and invalidates previous links. Unexpired, unused legacy signup links
+without the new email/generation binding preserve activation and the original organization name,
+but do not mark the current email verified. Resending invalidates those older links; the error
+page points to resend.
+The migration recognizes historical pending registrations by inactive status, no previous login, no membership
 and an existing terms acceptance. Historical organization names absent from stored signup
 data cannot be recovered from an old email link; resend falls back to the username.
 
