@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import random
+import logging
 from datetime import datetime, timezone
 
 import requests
+from urllib.parse import urlsplit, unquote
 
 from core.proxy import StrictProxySession
+from core.login_diagnostics import login_diagnostic, safe_text
 from game_client.auth.lobby import LobbyAuthenticator
 from game_client.client import GameClient
 from game_client.exceptions import LoginError
@@ -336,6 +339,7 @@ class GameSessionService:
         last_exc: Exception | None = None
         max_attempts = min(len(proxy_candidates), MAX_LOBBY_PROXY_ATTEMPTS)
         for attempt_no, proxy_url in enumerate(proxy_candidates[:max_attempts], start=1):
+            diagnostic = {}
             try:
                 return self._get_or_login_game_client_with_proxy(
                     account_id=account_id,
@@ -346,24 +350,43 @@ class GameSessionService:
                     proxy_url=proxy_url,
                     attempt_no=attempt_no,
                     total_attempts=max_attempts,
+                    diagnostic=diagnostic,
                 )
-            except LoginError as exc:
+            except (LoginError, requests.RequestException) as exc:
+                is_proxy_failure = self._is_proxy_failover_error(exc)
+                secrets = [creds.get('password'), creds.get('gf_token')]
+                for candidate in proxy_candidates:
+                    try:
+                        parsed = urlsplit(candidate)
+                        secrets.extend([parsed.username, parsed.password, unquote(parsed.password or '')])
+                    except ValueError:
+                        continue
+                if log:
+                    message = 'Diagnostico de login: ' + login_diagnostic(
+                        exc, diagnostic.get('session'), attempt_no, max_attempts, secrets,
+                    )
+                    try:
+                        log('warn', message)
+                    except Exception:
+                        logging.getLogger(__name__).warning('Hub indisponivel para diagnostico; registro local: %s', message)
+                # Keep downstream logs/cooldown reasons free of URLs with secrets.
+                exc = LoginError(safe_text(str(exc), secrets) or type(exc).__name__)
                 last_exc = exc
                 if game_account_id and "loginlink falhou: status=400" in str(exc).lower():
                     self._record_login_400(game_account_id=game_account_id, exc=exc, log=log)
                 if game_account_id and self._is_vacation_block(exc):
                     self._record_login_vacation(game_account_id=game_account_id, log=log)
-                    raise
-                if self._is_proxy_failover_error(exc) and attempt_no < max_attempts:
+                    raise exc from None
+                if is_proxy_failure and attempt_no < max_attempts:
                     if log:
                         log(
                             "warn",
                             f"Proxy/lobby falhou na tentativa {attempt_no}/{max_attempts}; trocando proxy e tentando novamente.",
                         )
                     continue
-                if game_account_id and self._is_proxy_failover_error(exc):
+                if game_account_id and is_proxy_failure:
                     self._record_login_proxy_failure(game_account_id=game_account_id, exc=exc, log=log)
-                raise
+                raise exc from None
 
         if last_exc:
             raise last_exc
@@ -380,6 +403,7 @@ class GameSessionService:
         proxy_url: str = "",
         attempt_no: int = 1,
         total_attempts: int = 1,
+        diagnostic: dict | None = None,
     ):
         """Return a ready GameClient, reopening only the server session when needed."""
         server_id = creds["server"]
@@ -402,6 +426,9 @@ class GameSessionService:
                 client = self._build_game_client(
                     account_id=effective_account_id, proxy_url=effective_proxy, user_agent=effective_user_agent,
                 )
+                if diagnostic is not None:
+                    diagnostic['session'] = client.session
+                client.session.login_stage = 'validate_cached_session'
                 try:
                     cached_valid = client.is_session_valid(server_id, cached.cookies, raise_on_error=True)
                 except requests.RequestException as exc:
@@ -423,6 +450,9 @@ class GameSessionService:
         client = self._build_game_client(
             account_id=effective_account_id, proxy_url=effective_proxy, user_agent=effective_user_agent,
         )
+        if diagnostic is not None:
+            diagnostic['session'] = client.session
+        client.session.login_stage = 'acquire_lobby_token'
 
         with self.sessions.get_lobby_lock(f"server-login:{account_id}"):
             raw_token = creds.get("gf_token", "") or self.get_lobby_token(account_id) or ""

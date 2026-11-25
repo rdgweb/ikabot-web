@@ -22,6 +22,7 @@ import time
 from typing import TYPE_CHECKING
 
 import requests
+from core.login_diagnostics import safe_url
 
 from game_client.constants import (
     LOBBY_ACCOUNTS_URL,
@@ -255,15 +256,15 @@ class LobbyAuthenticator:
         resp_json = resp.json()
         if "url" not in resp_json:
             raise LoginError(
-                f"loginLink falhou: status={resp.status_code} body={resp.text[:300]}"
+                f"loginLink falhou: status={resp.status_code} (resposta sem URL)"
             )
 
         login_url = resp_json["url"]
-        logger.info("loginLink URL obtained: %s", login_url[:80])
+        logger.info("loginLink URL obtained: %s", safe_url(login_url))
 
         # Validate it's a real game server URL
         if not re.search(r"https://s\d+-\w+\.ikariam\.gameforge\.com/index\.php\?", login_url):
-            raise LoginError(f"URL inválida do loginLink: {login_url[:100]}")
+            raise LoginError(f"URL inválida do loginLink: {safe_url(login_url)}")
 
         return login_url
 
@@ -564,11 +565,11 @@ class LobbyAuthenticator:
                 raise LoginError(
                     "Captcha necessário no lobby — tente novamente mais tarde"
                 )
-            raise LoginError(f"Conflito no login: {resp.text[:200]}")
+            raise LoginError("Conflito no login: status=409")
 
         if "token" not in resp.text:
             raise LoginError(
-                f"Login falhou com status {resp.status_code}: {resp.text[:200]}"
+                f"Login falhou com status {resp.status_code} (resposta sem token)"
             )
 
         data = resp.json()

@@ -163,6 +163,7 @@ class GameClient(IslandActions):
         self._setup_game_headers()
 
         # Fetch the initial page to get the actionRequest token
+        self.session.login_stage = 'initial_game_page'
         self._refresh_action_request()
 
         logger.info("GameClient login complete")

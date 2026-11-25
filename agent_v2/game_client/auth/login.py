@@ -68,10 +68,12 @@ class IkariamAuth:
         logger.info("Starting login for server %s", server_id)
 
         # Step 1: Lobby authentication (delegated)
+        self.session.login_stage = 'lobby_authentication'
         lobby_token = self._lobby.authenticate(email, password, existing_token)
         self._lobby_token = lobby_token
 
         # Step 2: Find the right account for this server
+        self.session.login_stage = 'lobby_accounts'
         accounts = self._lobby.fetch_accounts(lobby_token)
         account = self._find_account(accounts, server_id, lobby_account_id)
         if not account:
@@ -87,8 +89,10 @@ class IkariamAuth:
         }
 
         # Step 3: Get loginLink and follow to game server
+        self.session.login_stage = 'get_login_link'
         login_url = self._lobby.get_login_link(lobby_token, account)
 
+        self.session.login_stage = 'follow_login_link'
         self._lobby.follow_login_link(
             login_url,
             self.account_info["server_lang"],
@@ -96,6 +100,7 @@ class IkariamAuth:
         )
 
         # Step 4: Collect cookies
+        self.session.login_stage = 'collect_game_cookies'
         cookies = dict(self.session.cookies)
         if not cookies:
             raise LoginError("No session cookies obtained from game server")

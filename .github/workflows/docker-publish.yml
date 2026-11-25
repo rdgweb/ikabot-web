@@ -106,6 +106,8 @@ jobs:
           TEST_MARIADB=1 python hub_v2/manage.py test apps.piracy.tests --settings=config.settings.test --noinput
           cd agent_v2
           PYTHONPATH=. python -m unittest discover -s tests -p test_donate_loop.py
+          PYTHONPATH=. python -m unittest discover -s tests -p test_game_session_service.py
+          PYTHONPATH=. python -m unittest discover -s tests -p test_login_diagnostics.py
 
       - name: Set up Node for browser regression tests
         uses: actions/setup-node@v4

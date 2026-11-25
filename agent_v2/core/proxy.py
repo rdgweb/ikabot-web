@@ -2,8 +2,10 @@
 
 import logging
 import os
+import time
 
 import requests
+from core.login_diagnostics import safe_url
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +56,30 @@ class StrictProxySession(requests.Session):
                     "http": self._proxy_url,
                     "https": self._proxy_url,
                 }
-                logger.debug(f"Using proxy for: {request.url}")
+                logger.debug("Using proxy for: %s", safe_url(request.url))
             elif proxy_required():
                 raise ProxyRequired(
                     "Agente da plataforma sem proxy: conexao com o jogo bloqueada (nunca sai pelo IP do servidor)."
                 )
             else:
-                logger.debug(f"No proxy configured, using local IP for: {request.url}")
-        return super().send(request, **kwargs)
+                logger.debug("No proxy configured, using local IP for: %s", safe_url(request.url))
+        started = time.monotonic()
+        self.last_http_request = {'method': request.method, 'url': safe_url(request.url),
+                                  'timeout_seconds': kwargs['timeout']}
+        try:
+            response = super().send(request, **kwargs)
+            self.last_http_request.update(status=response.status_code,
+                                          duration_seconds=round(time.monotonic() - started, 3))
+            return response
+        except requests.RequestException as exc:
+            failed = getattr(exc, 'request', None) or request
+            self.last_http_request = {
+                'method': failed.method, 'url': safe_url(failed.url),
+                'timeout_seconds': kwargs['timeout'],
+                'duration_seconds': round(time.monotonic() - started, 3),
+                'exception': type(exc).__name__,
+            }
+            raise
 
     @staticmethod
     def _is_game_request(url: str) -> bool:

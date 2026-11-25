@@ -1,7 +1,9 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
+
+import requests
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +36,7 @@ class _FakeSession:
 class _FakeClient:
     behavior_by_proxy = {}
 
-    def __init__(self, account_id, hub, proxy_url=""):
+    def __init__(self, account_id, hub, proxy_url="", user_agent=""):
         self.account_id = account_id
         self.hub = hub
         self.proxy_url = proxy_url
@@ -125,6 +127,40 @@ class GameSessionServiceProxyFailoverTests(unittest.TestCase):
         self.assertEqual(client.proxy_url, "http://p2")
         self.assertEqual(service.hub.proxy_cooldown_calls, [])
         self.assertEqual(service.hub.clear_calls, ["ga-1"])
+
+    def test_raw_timeout_tries_next_proxy_and_persists_sanitized_trace(self):
+        service = self._service(["http://p1", "http://p2", "http://p3"])
+        _FakeClient.behavior_by_proxy = {"http://p1": requests.ReadTimeout(
+            "https://s61-br.ikariam.gameforge.com/index.php?token=private-token password=secret")}
+        log = Mock()
+        with patch("sessions.game_session_service.GameClient", _FakeClient):
+            client = service.get_or_login_game_client(account_id="acc-1", game_account_id="ga-1", creds=self._creds(), log=log)
+        self.assertEqual(client.proxy_url, "http://p2")
+        diagnostic = next(call.args[1] for call in log.call_args_list if 'Diagnostico de login' in call.args[1])
+        self.assertIn('ReadTimeout', diagnostic)
+        self.assertIn('test_game_session_service.py', diagnostic)
+        self.assertIn('"line":', diagnostic)
+        self.assertNotIn('private-token', diagnostic)
+        self.assertNotIn('password=secret', diagnostic)
+
+    def test_raw_timeouts_on_all_proxies_record_cooldown_once(self):
+        service = self._service(["http://p1", "http://p2", "http://p3"])
+        _FakeClient.behavior_by_proxy = {p: requests.ReadTimeout("Read timed out") for p in service.hub._proxies}
+        log = Mock()
+        with patch("sessions.game_session_service.GameClient", _FakeClient):
+            with self.assertRaises(LoginCooldownActive):
+                service.get_or_login_game_client(account_id="acc-1", game_account_id="ga-1", creds=self._creds(), log=log)
+        self.assertEqual(len(service.hub.proxy_cooldown_calls), 1)
+        self.assertEqual(sum('Diagnostico de login' in c.args[1] for c in log.call_args_list), 3)
+
+    def test_non_network_login_error_does_not_try_another_proxy(self):
+        service = self._service(["http://p1", "http://p2"])
+        _FakeClient.behavior_by_proxy = {"http://p1": LoginError("No account found for server s61-br")}
+        with patch("sessions.game_session_service.GameClient", _FakeClient):
+            with self.assertRaisesRegex(LoginError, 'No account found'):
+                service.get_or_login_game_client(account_id="acc-1", game_account_id="ga-1", creds=self._creds())
+        self.assertEqual(service.hub.clear_calls, [])
+        self.assertEqual(service.hub.proxy_cooldown_calls, [])
 
     def test_login_enters_cooldown_after_third_proxy_failure(self):
         service = self._service(["http://p1", "http://p2", "http://p3"])
