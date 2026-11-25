@@ -54,7 +54,7 @@ test('Access pages render searches, roles, provenance and explicit confirmation'
     });
     for (const name of ['people','roles','person','preview']) {
       await page.goto('http://access.test/users/permissoes/?fixture='+name);
-      assert.equal(await page.getByRole('link',{name:'Documentação da API',exact:true}).getAttribute('hx-boost'),'false');
+      assert.equal(await page.locator('a[href="/api/docs/"]').getAttribute('hx-boost'),'false');
       if(name==='roles')assert.ok(await page.getByText('Criar papel',{exact:true}).isVisible());
       if(name==='person')assert.ok(await page.getByText('Acesso efetivo · browser-person',{exact:true}).isVisible());
       if(name==='preview') {
