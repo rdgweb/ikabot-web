@@ -639,3 +639,35 @@ class TurnPassersTests(Base):
         plan = services.plan_for(passer)
         self.assertGreater(plan["preconvert_points"], 0)
         self.assertEqual(plan["share_percent"], 0)                        # a passer has no periodic share
+
+
+class LostRaidTests(Base):
+    """A raid sent and never answered by the agent does not stay "on its way" forever (HAVIT -> Executor, 23/11)."""
+
+    def _route(self, month, raider, target, sent_hours_ago):
+        now = timezone.now()
+        return PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=raider, target=target,
+                                          target_points=18867, due_from=now - timedelta(hours=sent_hours_ago),
+                                          due_until=now + timedelta(hours=6), status=PiracyRoute.SENT,
+                                          sent_at=now - timedelta(hours=sent_hours_ago))
+
+    def test_an_old_sent_raid_is_closed_and_frees_its_target(self):
+        month = self.plan()
+        lost = self._route(month, self.accounts[0], self.accounts[7], sent_hours_ago=7)
+        fresh = self._route(month, self.accounts[1], self.accounts[8], sent_hours_ago=1)
+        services.expire()
+        lost.refresh_from_db()
+        fresh.refresh_from_db()
+        self.assertEqual(lost.status, PiracyRoute.SKIPPED)
+        self.assertIn("sem retorno", lost.message)
+        self.assertEqual(fresh.status, PiracyRoute.SENT)               # a raid still flying is left alone
+
+    def test_a_new_raid_sent_closes_the_older_one_of_the_same_ship(self):
+        month = self.plan()
+        lost = self._route(month, self.accounts[0], self.accounts[7], sent_hours_ago=2)
+        now = timezone.now()
+        new = PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=self.accounts[0],
+                                         target=self.accounts[8], due_from=now, due_until=now + timedelta(hours=6))
+        services.report(new, PiracyRoute.SENT, "assalto direto da fortaleza")
+        lost.refresh_from_db()
+        self.assertEqual(lost.status, PiracyRoute.SKIPPED)

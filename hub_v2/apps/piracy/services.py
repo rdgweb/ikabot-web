@@ -193,6 +193,7 @@ SHARE_JITTER_DOWN, SHARE_JITTER_UP = 2, 1   # N-255: an origin's share is drawn 
 BALANCE_SHARE = 0.25         # N-217: a champion this far ahead of the other (share of its own take, at least
                              # min_points) leaves a target both can take to the other one
 ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)
+SENT_HOURS = 6               # a raid sent and never answered in this time is closed (the agent lost it)
 
 
 def current_month(server_id: str):
@@ -503,6 +504,10 @@ def expire(now: datetime | None = None) -> int:
     now = now or timezone.now()
     skipped = PiracyRoute._base_manager.filter(status=PiracyRoute.PLANNED, due_until__lt=now).update(
         status=PiracyRoute.SKIPPED, message="não saiu a tempo")
+    # a raid "on its way" for hours was lost by the agent: it would show forever as on its way, keep its target taken
+    # from everyone and count points the champion never got (HAVIT -> Executor, 23/11)
+    skipped += PiracyRoute._base_manager.filter(status=PiracyRoute.SENT, sent_at__lt=now - timedelta(hours=SENT_HOURS)).update(
+        status=PiracyRoute.SKIPPED, done_at=now, message="sem retorno do agente; fechado sozinho")
     for month in PiracyMonth._base_manager.filter(status=PiracyMonth.OPEN, ends_at__lt=now).select_related("organization"):
         _roll_over(month, now)
     return skipped
@@ -1063,6 +1068,9 @@ def report(route, status: str, message: str = "") -> None:
     now = timezone.now()
     if status == PiracyRoute.SENT:
         route.status, route.sent_at = status, now
+        # a ship carries one raid: an older one still "on its way" for this raider was lost
+        PiracyRoute._base_manager.filter(raider_id=route.raider_id, status=PiracyRoute.SENT).exclude(pk=route.pk).update(
+            status=PiracyRoute.SKIPPED, done_at=now, message="sem retorno do agente; outro assalto saiu")
     elif status in (PiracyRoute.DONE, PiracyRoute.FAILED):
         route.status, route.done_at = status, now
     else:
