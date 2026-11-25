@@ -108,9 +108,9 @@
   <div class="pp-card pp-kpi risk"><div class="pp-lab">Pontos expostos</div><div class="pp-val">{{ chain.exposed|intcomma }}</div>
     <div class="pp-sub">em {{ chain.exposed_count }} conta{{ chain.exposed_count|pluralize }} fora das campeãs</div>
     <div class="pp-stack">{% for p in chain.exposed_parts %}<i title="{{ p.name }}" style="width: {{ p.pct }}%; background: {{ p.color }};"></i>{% endfor %}</div></div>
-  <div class="pp-card pp-kpi"><div class="pp-lab">Próxima troca de papéis</div><div class="pp-val">{{ next_turn|timeuntil:now|default:"—" }}</div>
+  <div class="pp-card pp-kpi"><div class="pp-lab">Próxima troca de papéis</div><div class="pp-val">{{ next_turn_in }}</div>
     <div class="pp-sub">{{ next_turn|date:"d/m H:i" }} · a cada {{ month.rotate_days }} dias</div></div>
-  <div class="pp-card pp-kpi"><div class="pp-lab">Virada do ranking</div><div class="pp-val">{% if clock_human %}{{ clock_human }}{% else %}{{ month.ends_at|timeuntil:now }}{% endif %}</div>
+  <div class="pp-card pp-kpi"><div class="pp-lab">Virada do ranking</div><div class="pp-val">{{ ranking_in }}</div>
     <div class="pp-sub">{{ month.ends_at|date:"d/m H:i" }} · campeãs trocam sozinhas</div></div>
   <div class="pp-card pp-kpi"><div class="pp-lab">Melhor posição</div><div class="pp-val">{% if best_place %}{{ best_place }}º{% else %}—{% endif %}</div>
     <div class="pp-sub">{{ points|intcomma }} pts no ranking</div></div>

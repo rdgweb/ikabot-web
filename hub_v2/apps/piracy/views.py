@@ -38,6 +38,15 @@ def _server(request) -> str:
     return counts.most_common(1)[0][0] if counts else ""
 
 
+def _short_until(when, now) -> str:
+    """N-255: "22h 25m" / "17d 23h" — short enough for one line of a card."""
+    if not when:
+        return "—"
+    seconds = max(0, int((when - now).total_seconds()))
+    days, rest = divmod(seconds, 86400)
+    return f"{days}d {rest // 3600}h" if days else f"{rest // 3600}h {(rest % 3600) // 60:02d}m"
+
+
 def _clock_human(clock) -> str:
     if clock is None:
         return ""
@@ -108,6 +117,8 @@ class PiracyView(LoginRequiredMixin, View):
             "share_low": max(0, month.share_percent - services.SHARE_JITTER_DOWN) if month else 0,
             "share_high": month.share_percent + services.SHARE_JITTER_UP if month else 0,
             "balance_pct": round(services.BALANCE_SHARE * 100),
+            "next_turn_in": _short_until(services.next_rotation(month), timezone.now()) if month else "",
+            "ranking_in": _short_until(month.ends_at, timezone.now()) if month else "",
             "turn": services.rotation_index(month) + 1 if month else None, "next_turn": services.next_rotation(month) if month else None, "next_raids": nxt["planned"], "waiting": nxt["waiting"], "routes": routes, "history": history, "own_ranked": own_ranked,
             "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
             "marked": services.marked_targets(getattr(request, "organization", None), server) if server else [],
