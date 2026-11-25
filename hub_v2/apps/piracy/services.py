@@ -189,6 +189,7 @@ PAIR_DAYS = 3                # the same raider takes from the same account once 
 CREW_BONUS_MAX = 1400        # N-218: crew strength the held capture points add (the game's completeCrewPoints has it)
 CREW_BONUS_FULL = 7000       # points that give the bonus (Rodrigo; measured: all or nothing)
 ROTATE_DAYS = 3              # N-217: passers and origins swap every this many days (the ranking runs 21 days)
+SHARE_JITTER_DOWN, SHARE_JITTER_UP = 2, 1   # N-255: an origin's share is drawn this much below/above the plan's (3% -> 1-4%)
 BALANCE_SHARE = 0.25         # N-217: a champion this far ahead of the other (share of its own take, at least
                              # min_points) leaves a target both can take to the other one
 ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)
@@ -226,12 +227,15 @@ def members_now(month, now: datetime | None = None) -> list:
     """The month's accounts with their role now: the champions stay; in each group the passers change turn by turn
     (every rotate_days), as many as the group started with. N-215: each turn picks the passers among the accounts that
     may pass points on (a champion of another lobby can take theirs), so that every origin keeps someone of another
-    lobby to take its points, giving the turn to who passed the least; with no such choice the passers stay.
-    N-217: a group may hold both champions (one pool): plans drawn since then are one group."""
+    lobby to take its points, giving the turn to who passed the least. N-255: among those, the ones that need to convert
+    the least to beat their origins; a turn's passers are decided once and kept in month.turns (they never change in
+    the middle of a turn when the crews change)."""
     from types import SimpleNamespace
 
     turn = rotation_index(month, now)
     stored = list(month.members.select_related("game_account__account").order_by("group", "id"))
+    saved_turns = dict(month.turns or {})
+    changed = False
     out = []
     for group in sorted({m.group for m in stored}):
         of = [m for m in stored if m.group == group]
@@ -241,15 +245,60 @@ def members_now(month, now: datetime | None = None) -> list:
         others = [m.game_account for m in of if m.role != PiracyMember.CHAMPION]
         passers = [m.game_account for m in of if m.role == PiracyMember.PASSER]
         counts = {ga.pk: (1 if ga in passers else 0) for ga in others}
-        for _ in range(turn):
-            passers = _next_passers(champions, others, passers, counts)
+        cost = None
+        for number in range(1, turn + 1):
+            key = f"{group}:{number}"
+            if key in saved_turns:
+                kept = {str(pk) for pk in saved_turns[key]}
+                passers = [ga for ga in others if str(ga.pk) in kept]
+            else:
+                if cost is None:
+                    cost = _conversion_cost(month, others)
+                passers = _next_passers(champions, others, passers, counts, cost)
+                saved_turns[key] = [str(ga.pk) for ga in passers]
+                changed = True
             for ga in passers:
                 counts[ga.pk] += 1
         chosen = {ga.pk for ga in passers}
         for ga in others:
             out.append(SimpleNamespace(game_account=ga, game_account_id=ga.pk, group=group,
                                        role=PiracyMember.PASSER if ga.pk in chosen else PiracyMember.ORIGIN))
+    if changed and month.pk:
+        month.turns = saved_turns
+        PiracyMonth._base_manager.filter(pk=month.pk).update(turns=saved_turns)
     return out
+
+
+def at_raid(month, crew: int | None, points: int | None) -> int | None:
+    """N-255: an account's strength when it is raided — it holds min_points or more then (the bonus of those)."""
+    if crew is None:
+        return None
+    held = int(points or 0)
+    return crew - crew_bonus(held) + crew_bonus(max(held, month.min_points))
+
+
+def _conversion_cost(month, accounts: list):
+    """N-255: cost(passers, origins) — the capture points the passers convert, all together, so each beats the origin
+    it would take from first (the most points for the least conversion); an origin it cannot beat costs a lot."""
+    read = {ga.pk: strength(ga) for ga in accounts}
+    ratio = ratio_for(month.min_win_percent)
+
+    def one(passer, origins) -> int:
+        mine = read.get(passer.pk) or {}
+        if mine.get("crew") is None or mine.get("points") is None:
+            return 10 ** 6
+        best = None
+        for o in origins:
+            theirs = read.get(o.pk) or {}
+            if o.account_id == passer.account_id or theirs.get("crew") is None:
+                continue
+            need = int(at_raid(month, theirs["crew"], theirs.get("points")) * ratio) + 1
+            points = convert_for(mine["crew"] - crew_bonus(mine["points"]), int(mine["points"]), need, None)
+            if points is not None and (best is None or points < best):
+                best = points
+        return best if best is not None else 10 ** 6
+
+    return lambda passers, origins: sum(one(p, origins) for p in passers)
 
 
 def _as_list(champions) -> list:
@@ -258,8 +307,9 @@ def _as_list(champions) -> list:
     return list(champions) if isinstance(champions, (list, tuple)) else [champions]
 
 
-def _next_passers(champions, others: list, current: list, counts: dict) -> list:
-    """The passers of the next turn of one group (see members_now); counts: turns each account has passed so far."""
+def _next_passers(champions, others: list, current: list, counts: dict, cost=None) -> list:
+    """The passers of the next turn of one group (see members_now); counts: turns each account has passed so far;
+    cost(passers, origins): the points they would convert (N-255), the lower the better among the fairest."""
     from itertools import combinations
 
     champions = _as_list(champions)
@@ -275,7 +325,8 @@ def _next_passers(champions, others: list, current: list, counts: dict) -> list:
         ids = {ga.pk for ga in combo}
         links = chain(champions, list(combo), [ga for ga in others if ga.pk not in ids])
         served = sum(1 for o in others if o.pk not in ids and any(t.pk in ids for t in links["takers"].get(o.pk, [])))
-        return (len(links["blocked"]), len(links["idle"]), sum(counts.get(ga.pk, 0) for ga in combo), ids == now_ids,
+        spend = cost(list(combo), [ga for ga in others if ga.pk not in ids]) if cost else 0
+        return (len(links["blocked"]), len(links["idle"]), sum(counts.get(ga.pk, 0) for ga in combo), spend, ids == now_ids,
                 -served, sorted(str(ga.pk) for ga in combo))
 
     options = list(combinations(sorted(able, key=lambda ga: (ga.name or "", str(ga.pk))), size))[:3000]
@@ -402,8 +453,8 @@ def build_groups(accounts: list, champions: list, crews: dict | None = None) -> 
 
 @transaction.atomic
 def plan_month(organization, server_id: str, *, champions: list | None = None, now: datetime | None = None,
-               rng: random.Random | None = None, share_percent: int = 10, share_every_hours: int = 24,
-               min_win_percent: int = 95, min_points: int = 10000):
+               rng: random.Random | None = None, share_percent: int = 3, share_every_hours: int = 24,
+               min_win_percent: int = 95, min_points: int = 10000, pair_days: int = 3, rotate_days: int | None = None):
     """Close the open month of that server and start a new one: champions, passers and origins of each group."""
     now = now or timezone.now()
     old = current_month(server_id)
@@ -426,7 +477,9 @@ def plan_month(organization, server_id: str, *, champions: list | None = None, n
                                        share_percent=max(0, min(100, int(share_percent))),
                                        share_every_hours=max(1, min(240, int(share_every_hours or 24))),
                                        min_win_percent=max(50, min(100, int(min_win_percent or 95))),
-                                       min_points=max(100, int(min_points or 10000)), rotate_days=ROTATE_DAYS)
+                                       min_points=max(100, int(min_points or 10000)),
+                                       rotate_days=max(1, min(30, int(rotate_days or ROTATE_DAYS))),
+                                       pair_days=max(1, min(30, int(pair_days or 3))))
     crews = {ga.pk: strength(ga)["crew"] for ga in accounts}
     for number, group in enumerate(build_groups(accounts, chosen, crews), start=1):
         for champion in group["champions"]:
@@ -450,9 +503,31 @@ def expire(now: datetime | None = None) -> int:
     now = now or timezone.now()
     skipped = PiracyRoute._base_manager.filter(status=PiracyRoute.PLANNED, due_until__lt=now).update(
         status=PiracyRoute.SKIPPED, message="não saiu a tempo")
-    for month in PiracyMonth._base_manager.filter(status=PiracyMonth.OPEN, ends_at__lt=now):
-        close_month(month, "o ranking virou")
+    for month in PiracyMonth._base_manager.filter(status=PiracyMonth.OPEN, ends_at__lt=now).select_related("organization"):
+        _roll_over(month, now)
     return skipped
+
+
+def _roll_over(month, now) -> None:
+    """N-255: the month ends at the ranking turn — the next one starts at once, with champions drawn among the accounts
+    that were not champions yet and the same rules, so no account is ever left out of a plan (it would play by its
+    job's own mode, converting all). With too few accounts it only closes."""
+    from django.db import transaction
+
+    from apps.orgs.scope import activate, deactivate
+
+    token = activate(month.organization)
+    try:
+        with transaction.atomic():
+            close_month(month, "o ranking virou")
+            try:
+                plan_month(month.organization, month.server_id, now=now, share_percent=month.share_percent,
+                           share_every_hours=month.share_every_hours, min_win_percent=month.min_win_percent,
+                           min_points=month.min_points, pair_days=month.pair_days, rotate_days=month.rotate_days)
+            except ValueError:
+                pass                                        # not enough accounts: the month only closes
+    finally:
+        deactivate(token)
 
 
 # ── what a champion can gather ─────────────────────────────────────────────────────────────────────────────────────
@@ -779,7 +854,8 @@ def plan_for(game_account, now: datetime | None = None, fresh: dict | None = Non
     role = next((m.role for m in now_members if m.game_account_id == game_account.pk), member.role)
     hold = role != PiracyMember.CHAMPION
     out = {"member": member, "month": month, "members": now_members, "role": role, "hold": hold, "final": False,
-           "convert_all": not hold, "share_percent": month.share_percent if hold else 0,
+           "convert_all": not hold, "share_percent": month.share_percent if role == PiracyMember.ORIGIN else 0,
+           "share_jitter": [SHARE_JITTER_DOWN, SHARE_JITTER_UP], "preconvert_points": 0, "preconvert_target": "",
            "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None, "base_cap": None,
            "bonus_max": CREW_BONUS_MAX, "bonus_full": CREW_BONUS_FULL}
     if hold:
@@ -788,10 +864,17 @@ def plan_for(game_account, now: datetime | None = None, fresh: dict | None = Non
             read[game_account.pk] = {**read.get(game_account.pk, {}), **fresh}
         mine_budget = budgets(month, {k: v["crew"] for k, v in read.items()},
                               {k: v["points"] for k, v in read.items() if v["points"] is not None}).get(game_account.pk) or {}
-        out.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"), base_cap=mine_budget.get("cap_base"))
+        out.update(crew_cap=mine_budget.get("cap"), crew_floor=None, base_cap=mine_budget.get("cap_base"))
+        if role == PiracyMember.PASSER:
+            # N-255: the passer converts AHEAD, at its turn, the least that beats the origin it takes from first (the
+            # most points for the least conversion) — so the raid goes out as soon as the origin has the points
+            best = _best_target(month, game_account, read.get(game_account.pk) or {}, now_members, member.group,
+                                out["base_cap"], now)
+            if best:
+                out.update(preconvert_points=best["convert"], preconvert_target=best["ga"].name)
         # in the final phase of the ranking (the points count for the position at the turn) nobody converts
         if _final_phase(game_account):
-            out.update(share_percent=0, crew_floor=None, final=True)
+            out.update(share_percent=0, crew_floor=None, final=True, preconvert_points=0)
     return out
 
 
@@ -824,7 +907,8 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
         return {"route": None, "hold": False}
     member, month, now_members, role, hold = plan["member"], plan["month"], plan["members"], plan["role"], plan["hold"]
     extra = {k: plan.get(k) for k in ("convert_all", "share_percent", "share_every_hours", "crew_cap", "crew_floor",
-                                      "base_cap", "bonus_max", "bonus_full")}
+                                      "base_cap", "bonus_max", "bonus_full", "share_jitter", "preconvert_points",
+                                      "preconvert_target")}
     if plan.get("waiting"):
         return {"route": None, "hold": True, **extra, "starts_at": int(month.starts_at.timestamp())}
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
@@ -851,7 +935,7 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
     level = PiracyMember.LEVEL[role]
     mine = {**strength(game_account), **fresh}
     week = max(1, int((now - month.starts_at).total_seconds() // (7 * 86400)) + 1)
-    recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
+    recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=month.pair_days or PAIR_DAYS))
                  .exclude(status=PiracyRoute.SKIPPED).values_list("target_id", flat=True))
     taken = set(PiracyRoute._base_manager.filter(month=month, status__in=(PiracyRoute.PLANNED, PiracyRoute.SENT))
                 .values_list("target_id", flat=True))           # one raid on an account at a time
@@ -880,7 +964,8 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
     # after the ranking turn: then every account's capture points go back to 0 and a raid takes nothing
     if month.turn_at and now < month.turn_at and now >= month.turn_at - TURN_MARGIN:
         return {"route": None, "hold": hold, **extra}
-    for points, convert, crew, ga in sorted(candidates, key=lambda c: (-c[0], c[1])):
+    # N-255: the most points for the least conversion first (net gain)
+    for points, convert, crew, ga in sorted(candidates, key=lambda c: (-(c[0] - c[1]), c[1])):
         if not _target_info(ga):
             continue
         when = now
@@ -894,6 +979,38 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
         route = PiracyRoute._base_manager.filter(raider=game_account, target=ga, status=PiracyRoute.PLANNED).order_by("-created_at").first()
         return {"route": {**_payload(route, _target_info(ga)), "convert_points": convert}, "hold": hold, **extra}
     return {"route": _outside_route(month, member, game_account, mine, now, week, role), "hold": hold, **extra}
+
+
+def pair_release(month, raider, target, now: datetime | None = None):
+    """N-255: when this raider may take from this account again (None: it may now)."""
+    now = now or timezone.now()
+    last = (PiracyRoute._base_manager.filter(raider=raider, target=target, created_at__gte=now - timedelta(days=month.pair_days or PAIR_DAYS))
+            .exclude(status=PiracyRoute.SKIPPED).order_by("-created_at").first())
+    return last.created_at + timedelta(days=month.pair_days or PAIR_DAYS) if last else None
+
+
+def _best_target(month, passer, mine: dict, members, group, base_cap, now) -> dict | None:
+    """N-255: the origin a passer takes from first — of another lobby, free of the pair rule, the most points for the
+    least conversion — with the points to convert to beat it (0: it already does); None when it beats none."""
+    if mine.get("crew") is None or mine.get("points") is None:
+        return None
+    best = None
+    for m in members:
+        if m.group != group or m.role != PiracyMember.ORIGIN or m.game_account.account_id == passer.account_id:
+            continue
+        if pair_release(month, passer, m.game_account, now):
+            continue
+        theirs = strength(m.game_account)
+        if theirs.get("crew") is None:
+            continue
+        target = {"crew": at_raid(month, theirs["crew"], theirs.get("points")), "points": theirs.get("points")}
+        convert = _convert_to_win(month, mine, target, base_cap)
+        if convert is None:
+            continue
+        gain = max(int(theirs.get("points") or 0), month.min_points) - convert
+        if best is None or gain > best["gain"]:
+            best = {"ga": m.game_account, "convert": convert, "gain": gain}
+    return best
 
 
 def champion_takes(month) -> dict:
@@ -926,7 +1043,7 @@ def _outside_route(month, member, game_account, mine, now, week, role=None) -> d
     """A target added by hand, raided by a champion (the strongest crew) — not twice by the same one in 7 days."""
     if (role or member.role) != PiracyMember.CHAMPION:
         return None
-    recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
+    recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=month.pair_days or PAIR_DAYS))
                  .exclude(status=PiracyRoute.SKIPPED).values_list("outside_id", flat=True))
     for target in PiracyTarget._base_manager.filter(organization=month.organization, server_id=month.server_id, active=True):
         if target.pk in recent:
@@ -952,3 +1069,111 @@ def report(route, status: str, message: str = "") -> None:
         return
     route.message = (message or "")[:255]
     route.save(update_fields=["status", "sent_at", "done_at", "message", "updated_at"])
+
+
+# ── the page (N-255): the chain board ───────────────────────────────────────────────────────────────────────────────
+
+LOBBY_COLORS = ["#4f86b9", "#c08a3e", "#4d9a6a", "#8a6bb5", "#b5523b", "#5c8f8a"]
+
+
+def _converting_until(game_account) -> int:
+    from apps.jobs.models import Job
+
+    job = Job._base_manager.filter(game_account=game_account, action_code=PIRATE_ACTION).order_by("-created_at").first()
+    return int(_job_inputs(job).get("_plan_convert_until") or 0) if job else 0
+
+
+def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
+    """Everything the piracy page shows of the running plan: exposed points, the two champions side by side, the chain
+    (origins -> passers -> champions) with what each account does next, and the feed of raids."""
+    now = now or timezone.now()
+    members = members_now(month, now)
+    lobbies = sorted({m.game_account.account_id for m in members},
+                     key=lambda a: -sum(1 for m in members if m.game_account.account_id == a))
+    color = {lobby: LOBBY_COLORS[i % len(LOBBY_COLORS)] for i, lobby in enumerate(lobbies)}
+    routes = list(month.routes.select_related("raider", "target", "outside").order_by("-created_at")[:40])
+    active = [r for r in routes if r.status in (PiracyRoute.PLANNED, PiracyRoute.SENT)]
+    by_target = {r.target_id: r for r in active if r.target_id}
+    by_raider = {r.raider_id: r for r in active}
+    takes = champion_takes(month)
+    scale = max(1, month.min_points * 2)
+    limits = budgets(month, {k: v.get("crew") for k, v in rows_by_ga.items()},
+                     {k: v.get("capture_points") for k, v in rows_by_ga.items() if v.get("capture_points") is not None})
+
+    def read(ga):
+        row = rows_by_ga.get(ga.pk) or {}
+        return {"crew": row.get("crew"), "points": row.get("capture_points")}
+
+    def node(m):
+        ga, r = m.game_account, read(m.game_account)
+        points = int(r["points"] or 0)
+        out = {"ga": ga, "role": m.role, "points": points, "crew": r["crew"], "color": color[ga.account_id],
+               "lobby": ga.account.label if ga.account_id else "", "fill": min(100, round(points * 100 / scale)),
+               "tone": "mut", "text": ""}
+        route_in, route_out = by_target.get(ga.pk), by_raider.get(ga.pk)
+        if m.role == PiracyMember.CHAMPION:
+            if route_out and route_out.status == PiracyRoute.SENT:
+                out.update(tone="warn", text=f"assalto a caminho · {route_out.target_name} ({route_out.target_points or 0:,})".replace(",", "."))
+            elif route_out:
+                out.update(tone="ok", text=f"rouba {route_out.target_name} agora")
+            else:
+                out.update(tone="ok", text="livre")
+        elif m.role == PiracyMember.PASSER:
+            until = _converting_until(ga)
+            if until > now.timestamp():
+                ready = timezone.localtime(datetime.fromtimestamp(until, tz=timezone.utc))
+                out.update(tone="warn", text=f"convertendo · pronta {ready:%H:%M}")
+            elif route_out:
+                out.update(tone="warn" if route_out.status == PiracyRoute.SENT else "ok",
+                           text=("a caminho · " if route_out.status == PiracyRoute.SENT else "rouba ") + route_out.target_name)
+            else:
+                best = _best_target(month, ga, r, members, m.group, (limits.get(ga.pk) or {}).get("cap_base"), now)
+                if best is None:
+                    out.update(tone="bad", text="não alcança as origens")
+                elif best["convert"]:
+                    out.update(tone="warn", text=f"converte {best['convert']:,} para vencer {best['ga'].name}".replace(",", "."))
+                else:
+                    out.update(tone="ok", text=f"já vence {best['ga'].name} sem converter")
+        else:
+            if route_in and route_in.status == PiracyRoute.SENT:
+                out.update(tone="warn", text=f"{route_in.raider.name} a caminho")
+            elif route_in:
+                out.update(tone="ok", text=f"vai para {route_in.raider.name}")
+            elif points >= month.min_points:
+                out.update(tone="warn", text=(rows_by_ga.get(ga.pk) or {}).get("why") or "aguardando")
+            else:
+                out.update(tone="mut", text="acumulando")
+        return out
+
+    nodes = [node(m) for m in members]
+    origins = sorted([n for n in nodes if n["role"] == PiracyMember.ORIGIN], key=lambda n: -n["points"])
+    passers = sorted([n for n in nodes if n["role"] == PiracyMember.PASSER], key=lambda n: -n["points"])
+    champions = [n for n in nodes if n["role"] == PiracyMember.CHAMPION]
+    for n in champions:
+        n["took"] = takes.get(n["ga"].pk, 0)
+    exposed = origins + passers
+    total = sum(n["points"] for n in exposed)
+    duel = None
+    if len(champions) == 2:
+        a, b = sorted(champions, key=lambda n: -n["took"])
+        both = a["took"] + b["took"]
+        ahead = a["took"] - b["took"] > max(month.min_points, BALANCE_SHARE * a["took"])
+        duel = {"left": a, "right": b, "left_pct": round(a["took"] * 100 / both) if both else 50,
+                "text": (f"{a['ga'].name} à frente · alvos em comum vão para {b['ga'].name}" if ahead
+                         else "dentro da margem · pega quem estiver pronta")}
+    feed = []
+    for r in routes:
+        if r.status == PiracyRoute.SKIPPED:
+            continue
+        feed.append({"route": r, "kind": r.status})
+        if len(feed) >= 8:
+            break
+    return {"origins": origins, "passers": passers, "champions": champions, "duel": duel, "feed": feed,
+            "exposed": total, "exposed_count": sum(1 for n in exposed if n["points"]),
+            "exposed_parts": [{"name": n["ga"].name, "pct": round(n["points"] * 100 / total), "color": n["color"]}
+                              for n in sorted(exposed, key=lambda n: -n["points"]) if total and n["points"]],
+            "legend": [{"label": next(m.game_account.account.label for m in members if m.game_account.account_id == lobby),
+                        "color": color[lobby]} for lobby in lobbies],
+            "bonus_mark": min(100, round(CREW_BONUS_FULL * 100 / scale)), "points_mark": min(100, round(month.min_points * 100 / scale)),
+            "day": max(1, (now - month.starts_at).days + 1) if now > month.starts_at else 0,
+            "days": max(1, (month.ends_at - month.starts_at).days)}

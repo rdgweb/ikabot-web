@@ -289,7 +289,8 @@ class PiracyMissionRunner(BaseRunner):
         organization, surely beaten, or a target added by hand), and how to convert: a champion converts all, the
         others keep their points and convert share_percent once every share_every_hours."""
         empty = {"route": None, "hold": False, "convert_all": False, "share_percent": 0, "share_every_hours": 24,
-                 "crew_cap": None, "crew_floor": None, "route_at": 0, "base_cap": None, "bonus_max": 0, "bonus_full": 0}
+                 "crew_cap": None, "crew_floor": None, "route_at": 0, "base_cap": None, "bonus_max": 0, "bonus_full": 0,
+                 "share_jitter": [0, 0], "preconvert_points": 0, "preconvert_target": ""}
         try:
             data = (self.hub.get_piracy_next(game_account_id, crew, points) if crew is not None or points is not None
                     else self.hub.get_piracy_next(game_account_id)) or {}
@@ -306,7 +307,10 @@ class PiracyMissionRunner(BaseRunner):
                 "crew_floor": _to_int(floor) if floor is not None else None,
                 "route_at": _to_int(data.get("route_at"), 0),
                 "base_cap": _to_int(data.get("base_cap")) if data.get("base_cap") is not None else None,
-                "bonus_max": max(0, _to_int(data.get("bonus_max"), 0)), "bonus_full": max(0, _to_int(data.get("bonus_full"), 0))}
+                "bonus_max": max(0, _to_int(data.get("bonus_max"), 0)), "bonus_full": max(0, _to_int(data.get("bonus_full"), 0)),
+                "share_jitter": list(data.get("share_jitter") or [0, 0])[:2],
+                "preconvert_points": max(0, _to_int(data.get("preconvert_points"), 0)),
+                "preconvert_target": str(data.get("preconvert_target") or "")}
 
     def _direct_raid(self, jid: str, client, city_id: str, route: dict[str, Any]) -> dict[str, Any] | None:
         """The raid straight from the fortress (the target within its reach); None when the game does not send it."""
@@ -1169,15 +1173,30 @@ class PiracyMissionRunner(BaseRunner):
                         # N-218: the last conversion is still coming in (the strength read does not have it yet)
                         self.log(jid, "info", f"Plano do mês: conversão anterior ainda em andamento "
                                               f"({(converting_until - now_ts) // 60} min); não converto de novo")
+                    elif plan.get("preconvert_points") and capture_points > 0:
+                        # N-255: a passer converts AHEAD, at its turn, the least that beats the origin it takes first
+                        factor = max(1, _to_int(state.get("conversion_factor"), 10))
+                        created = min(-(-plan["preconvert_points"] // factor), capture_points // factor)
+                        if created > 0:
+                            client.convert_piracy_points(city_id, created)
+                            self.log(jid, "info", f"Plano do mês: turno de passagem — convertidos {created * factor} pontos em "
+                                                  f"{created} de tripulação para vencer {plan.get('preconvert_target') or 'a origem'}")
                     elif plan["crew_floor"] and _to_int(state.get("complete_crew_points"), 0) < plan["crew_floor"] and capture_points > 0:
                         created = self._floor_convert(jid, client, city_id, state, capture_points, plan["crew_floor"], plan)
                     else:
-                        last_share = _to_int(inputs.get("_plan_share_at"), 0)
-                        if (plan["share_percent"] > 0 and capture_points > 0
-                                and now_ts - last_share >= plan["share_every_hours"] * 3600):
-                            created = self._share_convert(jid, client, city_id, state, capture_points, plan["share_percent"],
-                                                          plan["crew_cap"], plan)
+                        next_share = _to_int(inputs.get("_plan_share_next"), 0) or (
+                            _to_int(inputs.get("_plan_share_at"), 0) + plan["share_every_hours"] * 3600)
+                        if plan["share_percent"] > 0 and capture_points > 0 and now_ts >= next_share:
+                            # N-255: the share drawn around the plan's (3% -> 1-4%), and the next one at a drawn hour
+                            down, up = (list(plan.get("share_jitter") or [0, 0]) + [0, 0])[:2]
+                            percent = random.randint(max(0, plan["share_percent"] - _to_int(down, 0)),
+                                                     plan["share_percent"] + _to_int(up, 0))
+                            if percent > 0:
+                                created = self._share_convert(jid, client, city_id, state, capture_points, percent,
+                                                              plan["crew_cap"], plan)
                             _state_inputs["_plan_share_at"] = now_ts
+                            _state_inputs["_plan_share_next"] = (now_ts + plan["share_every_hours"] * 3600
+                                                                 + random.randint(-3 * 3600, 3 * 3600))
                     if created:
                         _state_inputs["_plan_convert_until"] = now_ts + self._conversion_seconds(state, created)
                 except Exception as exc:
@@ -1205,6 +1224,17 @@ class PiracyMissionRunner(BaseRunner):
                         self.log(jid, "info", f"Plano do mês: convertidos {crew * factor} pontos em {crew} de tripulação "
                                               f"para vencer {name}; o roubo sai quando a conversão entrar")
                 wait = max(60, converting_until - now_ts + 60)
+                # N-255: the ship does a mission meanwhile (the biggest that ends about when the conversion does)
+                fit = _fitting_level(mission_level, fortress_level, wait) if wait >= _MISSION_DURATIONS[1] else None
+                if fit is not None:
+                    try:
+                        started = client.start_piracy_mission(city_id, fit)
+                        wait = max(wait, _to_int(started.get("time_remaining"), _MISSION_DURATIONS.get(fit, 0)) + MISSION_BUFFER)
+                        self.log(jid, "info", f"Plano do mês: missão nível {fit} enquanto a conversão entra")
+                    except Exception as exc:
+                        if self.is_network_error(exc):
+                            raise
+                        self.log(jid, "warn", f"Plano do mês: missão durante a conversão não saiu: {exc}")
                 self.log(jid, "info", f"Plano do mês: esperando a conversão para roubar {name} (volto em {wait // 60} min)")
                 self.save_game_client(game_account_id, client)
                 return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs={**inputs, **_state_inputs},

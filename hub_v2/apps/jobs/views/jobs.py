@@ -1880,10 +1880,19 @@ class JobListView(FilterSortListView):
             text = f"plano começa {_tz.localtime(plan['month'].starts_at):%d/%m %H:%M}; segura os pontos até lá"
         elif plan["convert_all"]:
             text = "converte tudo e junta os pontos"
-        elif plan["final"] or not plan["share_percent"]:
+        elif plan["final"]:
             text = "segura os pontos (fase final: não converte)"
+        elif plan["role"] == "passer":
+            # N-255: a passer converts ahead, at its turn, only the least that beats an origin
+            if plan.get("preconvert_points"):
+                text = f"converte {plan['preconvert_points']:,} pontos para vencer {plan['preconvert_target']}".replace(",", ".")
+            else:
+                text = "já vence as origens; segura os pontos"
+        elif not plan["share_percent"]:
+            text = "segura os pontos"
         else:
-            text = f"converte {plan['share_percent']}% a cada {plan['share_every_hours']}h"
+            low = max(0, plan["share_percent"] - piracy.SHARE_JITTER_DOWN)
+            text = f"converte {low}-{plan['share_percent'] + piracy.SHARE_JITTER_UP}% a cada {plan['share_every_hours']}h"
             if plan["crew_cap"] is not None:
                 text += f" até {plan['crew_cap']} de tripulação"
         return {"role": names.get(plan["role"], plan["role"]), "text": text}

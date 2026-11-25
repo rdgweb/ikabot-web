@@ -28,13 +28,15 @@ class PiracyMonth(UUIDTimestampModel):
     ends_at = models.DateTimeField()
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=OPEN, db_index=True)
     chosen_by = models.CharField(max_length=12, default="sorteio")        # sorteio | escolha
-    share_percent = models.PositiveSmallIntegerField(default=10)       # the others convert this share of their points...
+    share_percent = models.PositiveSmallIntegerField(default=3)        # N-255: origins convert about this share (1-4% drawn)...
     share_every_hours = models.PositiveSmallIntegerField(default=24)   # ...once in this many hours
     min_win_percent = models.PositiveSmallIntegerField(default=95)     # raid only with at least this chance of winning
     min_points = models.PositiveIntegerField(default=10000)            # an account is taken from once it holds this many points
     paused = models.BooleanField(default=False)                        # paused: every account plays as if there were no plan
     rotate_days = models.PositiveSmallIntegerField(default=7)          # origins and passers swap roles every this many days
     turn_at = models.DateTimeField(null=True, blank=True)              # a ranking turn inside the plan: roles swap there too
+    pair_days = models.PositiveSmallIntegerField(default=3)            # N-255: the same raider takes from the same account once in this many days
+    turns = models.JSONField(default=dict, blank=True)                 # N-255: the passers chosen for each turn ("1": [ids]) — decided once
     notes = models.TextField(blank=True, default="")
 
     class Meta:

@@ -1,0 +1,11 @@
+{# N-255: one column of the chain — the account, its points against the bonus and raid marks, what it does next #}
+{% load humanize %}
+{% for n in nodes %}
+<div class="pp-node" style="--c: {{ n.color }};" title="{{ n.lobby }} · força {{ n.crew|default_if_none:'?'|intcomma }}">
+  <div class="n"><b>{{ n.ga.name }}</b><span>{{ n.points|intcomma }}</span></div>
+  <div class="pp-meter"><i style="width: {{ n.fill }}%;"></i><s style="left: {{ chain.bonus_mark }}%;"></s><s class="cut" style="left: {{ chain.points_mark }}%;"></s></div>
+  <div class="pp-st {{ n.tone }}"><i class="bi {% if n.tone == 'ok' %}bi-check2{% elif n.tone == 'bad' %}bi-x-lg{% elif n.tone == 'warn' %}bi-hourglass-split{% else %}bi-dot{% endif %}"></i><span>{{ n.text }}</span></div>
+</div>
+{% empty %}
+<p class="pp-sub" style="margin: 0;">—</p>
+{% endfor %}

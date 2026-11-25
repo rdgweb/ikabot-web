@@ -473,3 +473,15 @@ class BonusStepTests(unittest.TestCase):
         state = {"conversion_factor": 10, "complete_crew_points": 100}      # 5.000 points: no bonus, base 100
         plan = {"bonus_max": 1400, "bonus_full": 7000, "base_cap": None}
         self.assertEqual(runner._floor_convert("j", Game(), "1", state, 5000, 400, plan), 300)
+
+
+class PlanTurnFieldsTests(unittest.TestCase):
+    """N-255: the passer's conversion ahead and the drawn share come from the hub."""
+
+    def test_plan_next_reads_the_new_fields(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.hub = types.SimpleNamespace(get_piracy_next=lambda game_account_id: {
+            "route": None, "hold": True, "share_percent": 3, "share_jitter": [2, 1],
+            "preconvert_points": 3330, "preconvert_target": "LordDarkness"})
+        plan = runner._plan_next("ga")
+        self.assertEqual((plan["share_jitter"], plan["preconvert_points"], plan["preconvert_target"]), ([2, 1], 3330, "LordDarkness"))

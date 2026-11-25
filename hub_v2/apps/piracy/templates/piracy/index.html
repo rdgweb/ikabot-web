@@ -5,59 +5,97 @@
 {% block breadcrumb_items %}<span class="mx-1">/</span> <span class="text-ink">Pirataria</span>{% endblock %}
 
 {% block content %}
-{# N-210/N-211: a pirataria das contas num servidor, as campeãs do mês e os alvos #}
+{# N-255: painel da corrente — quanto está exposto, para onde cada ponto vai e o que acontece agora #}
 {% include "orgs/_org_style.html" %}
 <style>
-  .pr-top { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: .9rem; margin-bottom: .9rem; align-items: start; }
-  .pr-trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .9rem; margin-bottom: .9rem; align-items: start; }
-  @media (max-width: 1100px) { .pr-top { grid-template-columns: 1fr; } }
-  .pr-top .org-panel, .pr-trio .org-panel { padding: 1rem 1.1rem; }
-  .pr-top h3, .pr-trio h3 { margin-bottom: .6rem; }
-  .pr-flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .7rem; }
-  .pr-group { border: 1px solid var(--ik-line); border-radius: 12px; padding: .7rem; background: rgba(255,255,255,.35); }
-  .pr-champ { display: flex; align-items: center; gap: .65rem; padding: .6rem .75rem; border-radius: 12px; border: 1px solid rgba(201,156,78,.55);
-              background: linear-gradient(135deg, rgba(201,156,78,.2), rgba(201,156,78,.04)); }
-  .pr-champ .crown { width: 36px; height: 36px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center;
-                     background: rgba(201,156,78,.28); color: #8a6420; font-size: 1.05rem; flex-shrink: 0; }
-  .pr-champ b { font-size: .95rem; color: var(--ik-ink); }
-  .pr-stage { margin: .55rem 0 .3rem; font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ik-muted); }
-  .pr-chips { display: flex; flex-wrap: wrap; gap: .3rem; }
-  .pr-chip { display: inline-flex; flex-direction: column; padding: .3rem .55rem; border-radius: 9px; border: 1px solid var(--ik-line); background: var(--ik-paper); }
-  .pr-chip b { font-size: .76rem; color: var(--ik-ink); }
-  .pr-chip span { font-size: .64rem; color: var(--ik-muted); font-family: ui-monospace, monospace; }
-  .pr-chip.hot { border-color: rgba(201,146,46,.7); background: rgba(201,146,46,.08); }
-  .pr-rules { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .6rem; }
-  .pr-set { display: flex; flex-wrap: wrap; gap: .45rem; align-items: flex-end; margin-top: .6rem; padding-top: .6rem; border-top: 1px solid var(--ik-line); }
-  .pr-set label { display: block; font-size: .66rem; font-weight: 600; color: var(--ik-muted); margin-bottom: .2rem; }
-  .pr-set .form-input { padding: .3rem .45rem; font-size: .82rem; }
-  .pr-acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: .6rem; }
-  .pr-acc { border: 1px solid var(--ik-line); border-radius: 12px; background: var(--ik-paper); padding: .6rem .7rem; }
-  .pr-acc.out { opacity: .5; }
-  .pr-acc .top { display: flex; align-items: center; gap: .4rem; margin-bottom: .45rem; }
-  .pr-acc .top b { flex: 1; min-width: 0; font-size: .86rem; color: var(--ik-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pr-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .3rem; }
-  .pr-stats div { background: rgba(201,156,78,.07); border-radius: 8px; padding: .3rem .4rem; }
-  .pr-stats small { display: block; font-size: .56rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ik-muted); }
-  .pr-stats strong { font-size: .8rem; font-family: ui-monospace, monospace; color: var(--ik-ink); }
-  .pr-acc .foot { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .45rem; font-size: .66rem; color: var(--ik-muted); }
+  .pp-top { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin-bottom: 1rem; }
+  .pp-top h1 { font-family: Rajdhani, sans-serif; font-size: 1.9rem; font-weight: 700; margin: 0; color: var(--ik-ink); }
+  .pp-pill { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; font-weight: 600; padding: .3rem .75rem; border-radius: 99px; background: rgba(63,138,90,.13); color: #2f6b3a; }
+  .pp-pill.off { background: rgba(140,128,110,.15); color: var(--ik-muted); }
+  .pp-pill.wait { background: rgba(201,146,46,.15); color: #8a6420; }
+  .pp-pill i.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px rgba(63,138,90,.15); }
+  .pp-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: .45rem; }
+  .pp-kpis { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: .8rem; margin-bottom: .9rem; }
+  @media (max-width: 1000px) { .pp-kpis { grid-template-columns: 1fr 1fr; } }
+  .pp-card { background: var(--ik-paper, #fffdf8); border: 1px solid var(--ik-line); border-radius: 16px; }
+  .pp-kpi { padding: .9rem 1.05rem; }
+  .pp-lab { font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ik-muted); font-weight: 700; }
+  .pp-val { font-family: Rajdhani, sans-serif; font-size: 1.95rem; font-weight: 700; line-height: 1.1; color: var(--ik-ink); }
+  .pp-sub { font-size: .78rem; color: var(--ik-muted); }
+  .pp-kpi.risk { background: linear-gradient(135deg, #fff6ef, #fdebe1); border-color: #f0cdb8; }
+  .pp-kpi.risk .pp-val { color: #b5523b; }
+  .pp-stack { display: flex; height: 7px; border-radius: 99px; overflow: hidden; margin-top: .55rem; background: #f3e3d6; }
+  .pp-duel { display: grid; grid-template-columns: 1fr minmax(160px, 230px) 1fr; align-items: center; gap: 1rem; padding: 1rem 1.3rem; margin-bottom: .9rem; }
+  @media (max-width: 800px) { .pp-duel { grid-template-columns: 1fr; } }
+  .pp-champ { display: flex; align-items: center; gap: .8rem; }
+  .pp-champ.right { flex-direction: row-reverse; text-align: right; }
+  .pp-crown { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 1.25rem; background: rgba(201,156,78,.2); color: #8a6420; flex-shrink: 0; }
+  .pp-champ b { font-family: Rajdhani, sans-serif; font-size: 1.4rem; display: block; color: var(--ik-ink); line-height: 1.1; }
+  .pp-took { font-family: Rajdhani, sans-serif; font-size: 1.55rem; font-weight: 700; color: var(--ik-ink); line-height: 1; }
+  .pp-bal .bar { height: 11px; border-radius: 99px; overflow: hidden; display: flex; background: #eee4d3; }
+  .pp-bal .txt { font-size: .74rem; color: var(--ik-muted); text-align: center; margin-top: .35rem; }
+  .pp-tag { font-size: .68rem; font-weight: 700; padding: .05rem .45rem; border-radius: 6px; color: #fff; }
+  .pp-main { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: .9rem; align-items: start; }
+  @media (max-width: 1150px) { .pp-main { grid-template-columns: 1fr; } }
+  .pp-sec { padding: 1rem 1.15rem; }
+  .pp-sec h2 { font-family: Rajdhani, sans-serif; font-size: 1.25rem; margin: 0 0 .2rem; color: var(--ik-ink); }
+  .pp-legend { display: flex; flex-wrap: wrap; gap: .8rem; font-size: .72rem; color: var(--ik-muted); margin-bottom: .8rem; }
+  .pp-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .3rem; vertical-align: -1px; }
+  .pp-flow { display: grid; grid-template-columns: 1fr 26px 1fr 26px 1fr; align-items: start; }
+  @media (max-width: 900px) { .pp-flow { grid-template-columns: 1fr; } .pp-arrow { display: none; } }
+  .pp-colh { display: flex; justify-content: space-between; font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--ik-muted); margin-bottom: .45rem; }
+  .pp-arrow { align-self: center; text-align: center; color: #cdbb9c; font-size: 1.2rem; }
+  .pp-node { border: 1px solid var(--ik-line); border-left: 4px solid var(--c); border-radius: 12px; padding: .55rem .7rem; margin-bottom: .55rem; background: #fffefb; }
+  .pp-node .n { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+  .pp-node .n b { font-size: .9rem; color: var(--ik-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pp-node .n span { font-family: Rajdhani, sans-serif; font-size: 1.1rem; font-weight: 700; color: var(--ik-ink); }
+  .pp-meter { position: relative; height: 6px; border-radius: 99px; background: #f0e7d8; margin: .35rem 0 .3rem; }
+  .pp-meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--c); }
+  .pp-meter s { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #b9a98b; }
+  .pp-meter s.cut { background: #b5523b; }
+  .pp-st { font-size: .76rem; display: flex; gap: .3rem; align-items: center; }
+  .pp-st.ok { color: #2f6b3a; } .pp-st.warn { color: #9a6a17; } .pp-st.bad { color: #b5523b; } .pp-st.mut { color: var(--ik-muted); }
+  .pp-feed .it { display: flex; gap: .6rem; padding: .55rem 0; border-bottom: 1px dashed var(--ik-line); }
+  .pp-feed .it:last-child { border-bottom: 0; }
+  .pp-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; font-size: .9rem; }
+  .pp-feed b { font-size: .84rem; color: var(--ik-ink); }
+  .pp-feed small { display: block; font-size: .72rem; color: var(--ik-muted); }
+  .pp-rules { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; padding: .75rem 1.15rem; margin-top: .9rem; }
+  .pp-rule { display: flex; align-items: center; gap: .4rem; padding: .4rem .7rem; border-radius: 11px; background: rgba(201,156,78,.1); font-size: .8rem; color: var(--ik-ink); }
+  .pp-rule b { font-family: Rajdhani, sans-serif; font-size: 1.05rem; }
+  .pp-foot { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .9rem; margin-top: .9rem; align-items: start; }
+  .pp-foot .pp-card { padding: .8rem 1rem; }
+  .pp-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .pp-chips span, .pp-chips a { font-size: .76rem; padding: .25rem .6rem; border-radius: 9px; background: rgba(201,156,78,.1); color: var(--ik-ink); text-decoration: none; }
   .pr-line { display: flex; align-items: center; gap: .55rem; padding: .4rem 0; border-top: 1px solid var(--ik-line); font-size: .8rem; }
   .pr-line:first-child { border-top: 0; }
   .pr-line .who { flex: 1; min-width: 0; }
   .pr-line .who b { font-weight: 600; color: var(--ik-ink); }
   .pr-line .who small { display: block; font-size: .68rem; color: var(--ik-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pr-num { font-family: ui-monospace, monospace; font-size: .8rem; color: var(--ik-ink); }
-  .pr-scroll { max-height: 15rem; overflow-y: auto; }
+  .pp-dialog { border: 0; border-radius: 18px; padding: 0; width: min(560px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  .pp-dialog::backdrop { background: rgba(40,30,15,.35); }
+  .pp-form { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; padding: 1.2rem 1.3rem; }
+  .pp-form label { display: block; font-size: .7rem; font-weight: 700; color: var(--ik-muted); margin-bottom: .2rem; text-transform: uppercase; letter-spacing: .05em; }
 </style>
 
-<div class="org-head" style="justify-content: space-between; margin-bottom: .7rem;">
-  <div style="display: flex; align-items: center; gap: .9rem;">
-    <span class="org-head-ico"><i class="bi bi-flag"></i></span>
-    <h1>Pirataria <small>{{ server }}</small></h1>
-  </div>
+<div class="pp-top">
+  <h1>Pirataria</h1>
   {% if servers|length > 1 %}
-  <form method="get" class="org-form"><select name="server" class="form-input" onchange="this.form.submit()">
+  <form method="get"><select name="server" class="form-input" onchange="this.form.submit()" style="padding: .25rem .5rem;">
     {% for s in servers %}<option value="{{ s }}" {% if s == server %}selected{% endif %}>{{ s }}</option>{% endfor %}
   </select></form>
+  {% else %}<span class="org-chip off">{{ server }}</span>{% endif %}
+  {% if month %}
+  <span class="pp-pill {% if month.paused %}off{% elif month.starts_at > now %}wait{% endif %}"><i class="dot"></i>
+    {% if month.paused %}Plano pausado{% elif month.starts_at > now %}Plano começa {{ month.starts_at|date:"H:i" }}{% else %}Plano rodando · dia {{ chain.day }} de {{ chain.days }}{% endif %}</span>
+  {% if can_run %}
+  <form method="post" class="pp-actions" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
+    {% if month.paused %}<button class="btn btn-secondary btn-sm" name="action" value="resume"><i class="bi bi-play-fill"></i> Retomar</button>
+    {% else %}<button class="btn btn-secondary btn-sm" name="action" value="pause"><i class="bi bi-pause-fill"></i> Pausar</button>{% endif %}
+    <button class="btn btn-secondary btn-sm" name="action" value="regroup"><i class="bi bi-arrow-repeat"></i> Refazer grupos</button>
+    <button class="btn btn-primary btn-sm" type="button" onclick="document.getElementById('pp-rules').showModal()"><i class="bi bi-sliders"></i> Regras do plano</button>
+  </form>
+  {% endif %}
   {% endif %}
 </div>
 
@@ -65,229 +103,140 @@
 <div class="org-panel" style="margin-bottom: .7rem; padding: .55rem .8rem; border-left: 4px solid {% if message.tags == 'error' %}#b3402f{% else %}#2d7a2d{% endif %}; font-size: .82rem;">{{ message }}</div>
 {% endfor %}
 
-<div class="org-cards" style="margin-bottom: .9rem; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
-  <div class="org-card hl" style="padding: .75rem .9rem;"><span class="org-icon gold"><i class="bi bi-hourglass-split"></i></span>
-    <span><span class="org-card-label">Ranking vira em</span><span class="org-card-value" style="display: block;">{{ clock_human|default:"—" }}</span></span></div>
-  <div class="org-card" style="padding: .75rem .9rem;"><span class="org-icon gold"><i class="bi bi-trophy"></i></span>
-    <span><span class="org-card-label">Melhor posição</span><span class="org-card-value" style="display: block;">{% if best_place %}{{ best_place }}º{% else %}—{% endif %}</span></span></div>
-  <div class="org-card" style="padding: .75rem .9rem;"><span class="org-icon"><i class="bi bi-gem"></i></span>
-    <span><span class="org-card-label">Pontos no ranking</span><span class="org-card-value" style="display: block;">{{ points|intcomma }}</span></span></div>
-  <div class="org-card" style="padding: .75rem .9rem;"><span class="org-icon {% if pirates %}bad{% else %}ok{% endif %}"><i class="bi bi-exclamation-octagon"></i></span>
-    <span><span class="org-card-label">Assaltos a caminho</span><span class="org-card-value" style="display: block;">{{ pirates }}</span></span></div>
-  <div class="org-card" style="padding: .75rem .9rem;"><span class="org-icon {% if captchas %}warn{% endif %}"><i class="bi bi-puzzle"></i></span>
-    <span><span class="org-card-label">Captchas</span><span class="org-card-value" style="display: block;">{{ captchas }}</span></span></div>
+{% if month %}
+<div class="pp-kpis">
+  <div class="pp-card pp-kpi risk"><div class="pp-lab">Pontos expostos</div><div class="pp-val">{{ chain.exposed|intcomma }}</div>
+    <div class="pp-sub">em {{ chain.exposed_count }} conta{{ chain.exposed_count|pluralize }} fora das campeãs</div>
+    <div class="pp-stack">{% for p in chain.exposed_parts %}<i title="{{ p.name }}" style="width: {{ p.pct }}%; background: {{ p.color }};"></i>{% endfor %}</div></div>
+  <div class="pp-card pp-kpi"><div class="pp-lab">Próxima troca de papéis</div><div class="pp-val">{{ next_turn|timeuntil:now|default:"—" }}</div>
+    <div class="pp-sub">{{ next_turn|date:"d/m H:i" }} · a cada {{ month.rotate_days }} dias</div></div>
+  <div class="pp-card pp-kpi"><div class="pp-lab">Virada do ranking</div><div class="pp-val">{% if clock_human %}{{ clock_human }}{% else %}{{ month.ends_at|timeuntil:now }}{% endif %}</div>
+    <div class="pp-sub">{{ month.ends_at|date:"d/m H:i" }} · campeãs trocam sozinhas</div></div>
+  <div class="pp-card pp-kpi"><div class="pp-lab">Melhor posição</div><div class="pp-val">{% if best_place %}{{ best_place }}º{% else %}—{% endif %}</div>
+    <div class="pp-sub">{{ points|intcomma }} pts no ranking</div></div>
 </div>
 
-<div class="pr-top">
-  <section class="org-panel">
-    <h3><i class="bi bi-trophy"></i> Campeãs do mês
-      {% if month %}
-      <span class="org-chip {% if month.paused %}off{% elif month.starts_at > now %}gold{% else %}ok{% endif %}" style="margin-left: auto;">
-        {% if month.paused %}pausado{% elif month.starts_at > now %}começa {{ month.starts_at|date:"d/m H:i" }}{% else %}rodando desde {{ month.starts_at|date:"d/m H:i" }}{% endif %}</span>
-      <span class="org-chip off">termina {{ month.ends_at|date:"d/m H:i" }}</span>
-      {% endif %}</h3>
-    {% if month %}
-    <div class="pr-flow">
-      {% for g in groups %}
-      <div class="pr-group">
-        {% for c in g.champions %}
-        <div class="pr-champ"><span class="crown"><i class="bi bi-trophy-fill"></i></span>
-          <span style="min-width: 0;"><b>{{ c.ga.name }}</b>
-            <span class="text-xs text-muted" style="display: block;">{{ c.ga.account.label }} · trip. {{ c.crew|default_if_none:"?"|intcomma }} · já pegou {{ c.took|intcomma }} pts no plano · converte tudo, junta na fase final</span></span>
-          {% if forloop.last and g.projection %}<span style="margin-left: auto; text-align: right;" title="soma dos pontos de cada conta x a chance de chegarem à campeã (direto ou pela passagem)">
-            <span class="org-card-label" style="display: block;">pode juntar</span>
-            <b style="font-family: ui-monospace, monospace;">≈ {{ g.projection.expected|intcomma }}</b>
-            <span class="text-xs text-muted" style="display: block;">de {{ g.projection.held|intcomma }}</span></span>{% endif %}</div>
-        {% endfor %}
-        {% if g.passers %}<p class="pr-stage">Passagens</p>
-        <div class="pr-chips">{% for r in g.passers %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
-          {% if r.must_convert %}<span style="color: #9a6a17;">converter {{ r.must_convert|intcomma }} para roubar</span>{% elif r.cannot_reach %}<span style="color: #9c3526;">não alcança as origens nem convertendo</span>{% elif r.can_convert is not None %}<span>pode converter {{ r.can_convert|intcomma }}</span>{% endif %}
-          {% if r.sources %}<span>pega de {{ r.sources }} orige{{ r.sources|pluralize:"m,ns" }}</span>{% elif r.sources is not None %}<span style="color: #9c3526;">sem origem de outro lobby</span>{% endif %}</span>{% endfor %}</div>{% endif %}
-        {% if g.origins %}<p class="pr-stage">Origens</p>
-        <div class="pr-chips">{% for r in g.origins %}<span class="pr-chip{% if r.capture_points >= month.min_points %} hot{% endif %}"><b>{{ r.ga.name }}</b><span>{{ r.capture_points|default_if_none:"?"|intcomma }} pts · {{ r.crew|default_if_none:"?"|intcomma }} trip.</span>
-          {% if r.can_convert is not None %}<span{% if not r.can_convert %} style="color: #9c3526;"{% endif %}>{% if r.can_convert %}pode converter {{ r.can_convert|intcomma }}{% else %}forte demais: não converter{% endif %}</span>{% endif %}
-          {% if r.takers %}<span>→ {{ r.takers|join:", " }}</span>{% elif r.takers is not None %}<span style="color: #9c3526;">ninguém de outro lobby pega</span>{% endif %}</span>{% endfor %}</div>{% endif %}
-        {% if g.blocked or g.idle or g.wrong %}<p class="text-xs" style="color: #9c3526; margin: .35rem 0 0;"><i class="bi bi-exclamation-triangle"></i>
-          {% if g.wrong %}passagem do lobby da campeã: {{ g.wrong|join:", " }}. {% endif %}{% if g.blocked %}sem quem pegue os pontos (mesmo lobby): {{ g.blocked|join:", " }}. {% endif %}{% if g.idle %}passagem sem origem de outro lobby: {{ g.idle|join:", " }}. {% endif %}Refazer grupos corrige.</p>{% endif %}
-        {% if g.projection %}<p class="pr-stage">Chega à campeã</p>
-        <div class="pr-chips">{% for d in g.projection.detail %}<span class="pr-chip" style="{% if not d.chance %}opacity: .55;{% endif %}"><b>{{ d.ga.name }} · {{ d.chance }}%</b><span>{{ d.way }}</span></span>{% endfor %}</div>{% endif %}
-      </div>
-      {% endfor %}
+{% if chain.duel %}
+<div class="pp-card pp-duel">
+  <div class="pp-champ"><span class="pp-crown"><i class="bi bi-trophy-fill"></i></span>
+    <div style="min-width: 0;"><b>{{ chain.duel.left.ga.name }}</b><span class="pp-sub"><span class="pp-tag" style="background: {{ chain.duel.left.color }};">{{ chain.duel.left.lobby }}</span> · força {{ chain.duel.left.crew|default_if_none:"?"|intcomma }}</span></div>
+    <div style="margin-left: auto; text-align: right;"><div class="pp-took">{{ chain.duel.left.took|intcomma }}</div><div class="pp-sub">pegou no plano</div></div></div>
+  <div class="pp-bal"><div class="bar"><i style="width: {{ chain.duel.left_pct }}%; background: {{ chain.duel.left.color }};"></i><i style="flex: 1; background: {{ chain.duel.right.color }};"></i></div>
+    <div class="txt">{{ chain.duel.text }}</div></div>
+  <div class="pp-champ right"><span class="pp-crown"><i class="bi bi-trophy-fill"></i></span>
+    <div style="min-width: 0;"><b>{{ chain.duel.right.ga.name }}</b><span class="pp-sub">força {{ chain.duel.right.crew|default_if_none:"?"|intcomma }} · <span class="pp-tag" style="background: {{ chain.duel.right.color }};">{{ chain.duel.right.lobby }}</span></span></div>
+    <div style="margin-right: auto; text-align: left;"><div class="pp-took">{{ chain.duel.right.took|intcomma }}</div><div class="pp-sub">pegou no plano</div></div></div>
+</div>
+{% endif %}
+
+<div class="pp-main">
+  <section class="pp-card pp-sec">
+    <h2>Corrente</h2>
+    <div class="pp-legend">{% for l in chain.legend %}<span><i style="background: {{ l.color }};"></i>{{ l.label }}</span>{% endfor %}
+      <span><i style="background: #b9a98b; width: 3px;"></i>{{ bonus_full|intcomma }} (bônus)</span><span><i style="background: #b5523b; width: 3px;"></i>{{ month.min_points|intcomma }} (roubo)</span></div>
+    <div class="pp-flow">
+      <div><div class="pp-colh"><span>Origens</span><span>{{ chain.origins|length }}</span></div>{% include "piracy/partials/chain_nodes.html" with nodes=chain.origins %}</div>
+      <div class="pp-arrow"><i class="bi bi-arrow-right"></i></div>
+      <div><div class="pp-colh"><span>Passagens</span><span>troca {{ next_turn|date:"d/m H:i" }}</span></div>{% include "piracy/partials/chain_nodes.html" with nodes=chain.passers %}</div>
+      <div class="pp-arrow"><i class="bi bi-arrow-right"></i></div>
+      <div><div class="pp-colh"><span>Campeãs</span><span>{{ chain.champions|length }}</span></div>{% include "piracy/partials/chain_nodes.html" with nodes=chain.champions %}</div>
     </div>
-    <div class="pr-rules">
-      <span class="org-chip off">mesmo lobby nunca</span>
-      <span class="org-chip off">mesmo par 1x em {{ pair_days }} dias</span>
-      {% if groups|length == 1 and groups.0.champions|length > 1 %}<span class="org-chip off">campeã muito à frente deixa o alvo para a outra</span>{% endif %}
-      <span class="org-chip off">vitória ≥ {{ month.min_win_percent }}%</span>
-      <span class="org-chip off">a partir de {{ month.min_points|intcomma }} pts, roubo assim que possível</span>
-      <span class="org-chip off">bônus de tripulação: até {{ bonus_max|intcomma }} com {{ bonus_full|intcomma }} pts guardados</span>
-      <span class="org-chip off">as outras convertem {{ month.share_percent }}% a cada {{ month.share_every_hours }}h</span>
-      <span class="org-chip gold"><i class="bi bi-arrow-repeat"></i> origens e passagens trocam {% if month.turn_at %}na virada do ranking e depois {% endif %}a cada {{ month.rotate_days }} dias · próxima troca {{ next_turn|date:"d/m H:i" }}</span>
-    </div>
-    {% if can_run %}
-    <form method="post" class="pr-set" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
-      <div><label>A partir de (pts)</label><input type="number" name="min_points" min="100" value="{{ month.min_points }}" class="form-input" style="width: 6.5rem;"></div>
-      <div><label>Vitória mín. (%)</label><input type="number" name="min_win_percent" min="50" max="100" value="{{ month.min_win_percent }}" class="form-input" style="width: 4.5rem;"></div>
-      <div><label>Converter (%)</label><input type="number" name="share_percent" min="0" max="100" value="{{ month.share_percent }}" class="form-input" style="width: 4.5rem;"></div>
-      <div><label>a cada (h)</label><input type="number" name="share_every_hours" min="1" max="240" value="{{ month.share_every_hours }}" class="form-input" style="width: 4.5rem;"></div>
-      <div><label>Trocar papéis (dias)</label><input type="number" name="rotate_days" min="1" max="30" value="{{ month.rotate_days }}" class="form-input" style="width: 4.5rem;"></div>
-      <button class="btn btn-secondary btn-sm" name="action" value="share"><i class="bi bi-check2"></i> Salvar</button>
-      <span style="margin-left: auto; display: flex; gap: .35rem;">
-        {% if month.paused %}<button class="btn btn-primary btn-sm" name="action" value="resume"><i class="bi bi-play-fill"></i> Retomar</button>
-        {% else %}<button class="btn btn-secondary btn-sm" name="action" value="pause"><i class="bi bi-pause-fill"></i> Pausar</button>{% endif %}
-        <button class="btn btn-secondary btn-sm" name="action" value="regroup" title="mantém as campeãs e reorganiza as contas pela tripulação"><i class="bi bi-diagram-3"></i> Refazer grupos</button>
-        <button class="btn btn-secondary btn-sm" name="action" value="plan" onclick="return confirm('Sortear outras campeãs?');"><i class="bi bi-shuffle"></i> Sortear</button>
-        <button class="btn btn-secondary btn-sm" name="action" value="close" onclick="return confirm('Encerrar o plano do mês?');"><i class="bi bi-stop-circle"></i> Encerrar</button>
-      </span>
-    </form>
-    {% endif %}
-    {% else %}
-    <p class="text-sm text-muted" style="margin: 0;">Sem campeãs neste mês · {{ eligible_count }} de {{ rows|length }} contas podem entrar{% if clock and clock < 172800 %} · começa na virada do ranking{% endif %}.</p>
-    {% if can_run and eligible_count >= 3 %}
-    <form method="post" class="pr-set" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
-      <div><label>A partir de (pts)</label><input type="number" name="min_points" min="100" value="10000" class="form-input" style="width: 6.5rem;"></div>
-      <div><label>Vitória mín. (%)</label><input type="number" name="min_win_percent" min="50" max="100" value="95" class="form-input" style="width: 4.5rem;"></div>
-      <div><label>Converter (%)</label><input type="number" name="share_percent" min="0" max="100" value="10" class="form-input" style="width: 4.5rem;"></div>
-      <div><label>a cada (h)</label><input type="number" name="share_every_hours" min="1" max="240" value="24" class="form-input" style="width: 4.5rem;"></div>
-      <button class="btn btn-primary btn-sm" name="action" value="plan"><i class="bi bi-shuffle"></i> Sortear as campeãs</button>
-      <span style="display: flex; gap: .35rem; align-items: flex-end;">
-        {% for n in "12" %}
-        <select name="champion" class="form-input" style="max-width: 11rem;">
-          {% for r in rows %}{% if r.eligible %}<option value="{{ r.ga.pk }}">{{ r.ga.name }} · {{ r.lobby }}</option>{% endif %}{% endfor %}
-        </select>
-        {% endfor %}
-        <button class="btn btn-secondary btn-sm" name="action" value="choose"><i class="bi bi-hand-index"></i> Escolher</button>
-      </span>
-    </form>
-    {% endif %}
-    {% endif %}
   </section>
 
-  <section class="org-panel">
-    <h3><i class="bi bi-crosshair"></i> Alvos <span class="text-xs text-muted" style="font-weight: 500;">das campeãs</span></h3>
+  <section class="pp-card pp-sec pp-feed">
+    <h2>Agora</h2>
+    {% for f in chain.feed %}{% with r=f.route %}
+    <div class="it">
+      <span class="pp-ic" style="background: {% if f.kind == 'done' %}rgba(63,138,90,.14){% elif f.kind == 'failed' %}rgba(181,82,59,.14){% else %}rgba(201,146,46,.16){% endif %};">
+        <i class="bi {% if f.kind == 'done' %}bi-check-lg{% elif f.kind == 'failed' %}bi-x-lg{% elif f.kind == 'sent' %}bi-send{% else %}bi-hourglass-split{% endif %}"></i></span>
+      <div style="min-width: 0;"><b>{{ r.raider.name }} ← {{ r.target_name }}</b>
+        <small>{% if f.kind == 'sent' %}a caminho{% elif f.kind == 'planned' %}sai agora{% else %}{{ r.done_at|default:r.created_at|date:"d/m H:i" }}{% endif %}{% if r.target_points %} · {{ r.target_points|intcomma }} pts{% endif %}{% if f.kind == 'failed' and r.message %} · {{ r.message|truncatechars:48 }}{% endif %}</small></div>
+    </div>{% endwith %}
+    {% empty %}<p class="pp-sub" style="margin: .3rem 0 0;">Nenhum roubo ainda neste plano.</p>{% endfor %}
+    {% for r in waiting|slice:":3" %}
+    <div class="it"><span class="pp-ic" style="background: rgba(140,128,110,.12);"><i class="bi bi-clock"></i></span>
+      <div style="min-width: 0;"><b>{{ r.ga.name }} · {{ r.capture_points|intcomma }}</b><small>{{ r.why }}</small></div></div>
+    {% endfor %}
+  </section>
+</div>
+
+<div class="pp-card pp-rules">
+  <span class="pp-lab" style="margin-right: .3rem;">Regras</span>
+  <span class="pp-rule"><i class="bi bi-bullseye"></i> rouba a partir de <b>{{ month.min_points|intcomma }}</b></span>
+  <span class="pp-rule"><i class="bi bi-shield-check"></i> vitória <b>≥ {{ month.min_win_percent }}%</b></span>
+  <span class="pp-rule"><i class="bi bi-arrow-left-right"></i> mesmo par <b>{{ month.pair_days }} dias</b></span>
+  <span class="pp-rule"><i class="bi bi-arrow-repeat"></i> troca de papéis <b>{{ month.rotate_days }} dias</b></span>
+  <span class="pp-rule"><i class="bi bi-coin"></i> origem converte <b>{{ share_low }}–{{ share_high }}%</b> / {{ month.share_every_hours }}h</span>
+  <span class="pp-rule"><i class="bi bi-scale"></i> margem entre campeãs <b>{{ balance_pct }}%</b></span>
+</div>
+
+{% if can_run %}
+<dialog id="pp-rules" class="pp-dialog">
+  <form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
+    <div style="padding: 1rem 1.3rem 0; display: flex; align-items: center;"><h2 style="font-family: Rajdhani, sans-serif; font-size: 1.35rem; margin: 0;">Regras do plano</h2>
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left: auto;" onclick="this.closest('dialog').close()"><i class="bi bi-x-lg"></i></button></div>
+    <div class="pp-form">
+      <div><label>Rouba a partir de (pts)</label><input type="number" name="min_points" min="100" value="{{ month.min_points }}" class="form-input w-full"></div>
+      <div><label>Vitória mínima (%)</label><input type="number" name="min_win_percent" min="50" max="100" value="{{ month.min_win_percent }}" class="form-input w-full"></div>
+      <div><label>Mesmo par (dias)</label><input type="number" name="pair_days" min="1" max="30" value="{{ month.pair_days }}" class="form-input w-full"></div>
+      <div><label>Troca de papéis (dias)</label><input type="number" name="rotate_days" min="1" max="30" value="{{ month.rotate_days }}" class="form-input w-full"></div>
+      <div><label>Origem converte (%)</label><input type="number" name="share_percent" min="0" max="100" value="{{ month.share_percent }}" class="form-input w-full"></div>
+      <div><label>A cada (horas)</label><input type="number" name="share_every_hours" min="1" max="240" value="{{ month.share_every_hours }}" class="form-input w-full"></div>
+    </div>
+    <div style="display: flex; gap: .5rem; padding: 0 1.3rem 1.2rem; flex-wrap: wrap;">
+      <button class="btn btn-primary btn-sm" name="action" value="share"><i class="bi bi-check2"></i> Salvar</button>
+      <button class="btn btn-secondary btn-sm" name="action" value="plan" onclick="return confirm('Sortear outras campeãs?');" style="margin-left: auto;"><i class="bi bi-shuffle"></i> Sortear campeãs</button>
+      <button class="btn btn-secondary btn-sm" name="action" value="close" onclick="return confirm('Encerrar o plano do mês?');"><i class="bi bi-stop-circle"></i> Encerrar</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
+{% else %}
+<section class="pp-card pp-sec" style="margin-bottom: .9rem;">
+  <h2>Sem plano neste mês</h2>
+  <p class="pp-sub" style="margin: 0 0 .7rem;">{{ eligible_count }} de {{ rows|length }} contas podem entrar{% if clock and clock < 172800 %} · começa na virada do ranking{% endif %}.</p>
+  {% if can_run and eligible_count >= 3 %}
+  <form method="post" hx-boost="false" style="display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end;">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}">
+    <button class="btn btn-primary btn-sm" name="action" value="plan"><i class="bi bi-shuffle"></i> Sortear as campeãs</button>
+    {% for n in "12" %}
+    <select name="champion" class="form-input" style="max-width: 11rem;">
+      {% for r in rows %}{% if r.eligible %}<option value="{{ r.ga.pk }}">{{ r.ga.name }} · {{ r.lobby }}</option>{% endif %}{% endfor %}
+    </select>
+    {% endfor %}
+    <button class="btn btn-secondary btn-sm" name="action" value="choose"><i class="bi bi-hand-index"></i> Escolher</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<div class="pp-foot">
+  <section class="pp-card">
+    <div class="pp-lab" style="margin-bottom: .5rem;">Alvos de fora</div>
     {% for t in targets %}
     <div class="pr-line">
-      <span class="who"><b>{{ t.player_name }}</b><small>{% if t.city_id %}cidade {{ t.city_id }}{% else %}cidade pelo ranking{% endif %} · tripulação desconhecida</small></span>
+      <span class="who"><b>{{ t.player_name }}</b><small>{% if t.city_id %}cidade {{ t.city_id }}{% else %}cidade pelo ranking{% endif %}</small></span>
       {% if can_run %}<form method="post" hx-boost="false">{% csrf_token %}<input type="hidden" name="server" value="{{ server }}"><input type="hidden" name="target" value="{{ t.pk }}">
         <button class="btn btn-secondary btn-sm" name="action" value="remove_target" title="Retirar"><i class="bi bi-x-lg"></i></button></form>{% endif %}
     </div>
     {% endfor %}
     {% if can_run %}
-    <input type="search" name="q" class="form-input w-full" placeholder="buscar jogador, aliança ou cidade" style="margin-top: .5rem;" autocomplete="off"
+    <input type="search" name="q" class="form-input w-full" placeholder="+ jogador que está roubando você" autocomplete="off"
            hx-get="{% url 'piracy:target-search' %}?server={{ server }}" hx-trigger="input changed delay:350ms, search"
            hx-target="#pr-target-results" hx-swap="innerHTML" hx-push-url="false">
-    {% if marked %}
-    <div class="pr-chips" style="margin-top: .45rem;">
-      {% for name in marked %}<button type="button" class="org-chip gold" style="border: 0; cursor: pointer;" title="marcado em Inteligência"
-        hx-get="{% url 'piracy:target-search' %}?server={{ server }}&q={{ name|urlencode }}" hx-target="#pr-target-results" hx-swap="innerHTML" hx-push-url="false">{{ name }}</button>{% endfor %}
-    </div>
-    {% endif %}
-    <div id="pr-target-results" class="pr-scroll" style="margin-top: .3rem;"></div>
-    <p class="text-xs text-muted" style="margin: .4rem 0 0;">Só cidades com pirataria, da Inteligência.</p>
+    {% if marked %}<div class="pp-chips" style="margin-top: .4rem;">{% for name in marked %}<a href="#" hx-get="{% url 'piracy:target-search' %}?server={{ server }}&q={{ name|urlencode }}" hx-target="#pr-target-results" hx-swap="innerHTML" hx-push-url="false">{{ name }}</a>{% endfor %}</div>{% endif %}
+    <div id="pr-target-results" style="max-height: 14rem; overflow-y: auto; margin-top: .3rem;"></div>
     {% endif %}
   </section>
+  <section class="pp-card">
+    <div class="pp-lab" style="margin-bottom: .5rem;">Campeãs dos meses</div>
+    <div class="pp-chips">{% for h in history %}<span>{{ h.month.starts_at|date:"m/Y" }} · {% for c in h.champions %}{{ c.name }}{% if not forloop.last %} + {% endif %}{% endfor %}{% if h.month.status == 'open' %} (agora){% endif %}</span>{% empty %}<span>nenhum ainda</span>{% endfor %}</div>
+  </section>
+  {% if month %}
+  <section class="pp-card">
+    <div class="pp-lab" style="margin-bottom: .5rem;">Fora do plano</div>
+    <div class="pp-chips">{% for r in outside_plan %}<span title="{{ r.lobby }}">{{ r.ga.name }}{% if not r.fortress %} · sem fortaleza{% elif not r.job %} · sem job{% endif %}</span>{% empty %}<span>todas as contas estão no plano</span>{% endfor %}</div>
+  </section>
+  {% endif %}
 </div>
-
-{% if month %}
-<section class="org-panel" style="margin-bottom: .9rem; padding: .9rem 1.1rem;">
-  <h3 style="margin-bottom: .5rem;"><i class="bi bi-alarm"></i> Próximos ataques</h3>
-  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .5rem;">
-    {% for route in next_raids %}
-    <div class="pr-chip" style="flex-direction: row; align-items: center; gap: .55rem;">
-      <span class="org-chip {% if route.status == 'sent' %}gold{% elif route.stage == 3 %}bad{% else %}ok{% endif %}">{% if route.status == 'sent' %}a caminho{% else %}{{ route.due_from|date:"d/m H:i" }}{% endif %}</span>
-      <span style="min-width: 0;"><b>{{ route.raider.name }} ← {{ route.target_name }}</b>
-        <span style="display: block;">{% if route.target_points %}{{ route.target_points|intcomma }} pts{% endif %}{% if route.raider_crew and route.target_crew %} · {{ route.raider_crew|intcomma }} × {{ route.target_crew|intcomma }}{% endif %}</span></span>
-    </div>
-    {% endfor %}
-    {% for r in waiting %}
-    <div class="pr-chip" style="flex-direction: row; align-items: center; gap: .55rem; opacity: .8;">
-      <span class="org-chip off">aguardando</span>
-      <span style="min-width: 0;"><b>{{ r.ga.name }}</b><span style="display: block;">{{ r.capture_points|intcomma }} pts · {{ r.why }}</span></span>
-    </div>
-    {% endfor %}
-    {% if not next_raids and not waiting %}<p class="text-sm text-muted" style="margin: 0;">Nenhum: nenhuma conta passou de {{ month.min_points|intcomma }} pontos{% if month.starts_at > now %} e o plano começa {{ month.starts_at|date:"d/m H:i" }}{% endif %}.</p>{% endif %}
-  </div>
-</section>
-{% endif %}
-
-<div class="pr-trio">
-  <section class="org-panel">
-    <h3><i class="bi bi-list-ol"></i> No ranking</h3>
-    <div class="pr-scroll">
-    {% for r in own_ranked %}
-    <div class="pr-line"><span class="org-chip {% if forloop.first %}gold{% else %}off{% endif %}">{{ r.place }}º</span>
-      <span class="who"><b>{{ r.ga.name }}</b>{% if r.gap_up is not None %}<small>faltam {{ r.gap_up|intcomma }} para passar {{ r.above_name }}</small>{% endif %}</span>
-      <span class="pr-num">{{ r.score|intcomma }}</span></div>
-    {% empty %}
-    <p class="text-sm text-muted" style="margin: 0;">Aparece quando o Pirata Automático ler o ranking.</p>
-    {% endfor %}
-    </div>
-  </section>
-  <section class="org-panel">
-    <h3><i class="bi bi-percent"></i> Quem vence quem</h3>
-    <div class="pr-scroll">
-    {% for o in best_odds %}
-    <div class="pr-line"><span class="org-chip {% if o.chance >= 95 %}ok{% elif o.chance >= 80 %}gold{% else %}off{% endif %}">{{ o.chance }}%</span>
-      <span class="who"><b>{{ o.raider.name }}</b> vence {{ o.target.name }}</span></div>
-    {% empty %}
-    <p class="text-sm text-muted" style="margin: 0;">Sem tripulações lidas ainda.</p>
-    {% endfor %}
-    </div>
-  </section>
-  <section class="org-panel">
-    <h3><i class="bi bi-arrow-left-right"></i> Assaltos {% if pirates %}<span class="org-chip bad" style="margin-left: auto;">{{ pirates }} a caminho</span>{% endif %}</h3>
-    <div class="pr-scroll">
-    {% for r in raids %}
-    <div class="pr-line"><span class="org-chip bad"><i class="bi bi-flag-fill"></i></span>
-      <span class="who"><b>{{ r.from }}</b> → {{ r.account.name }}<small>{{ r.city }} · {{ r.eta|default:"a caminho" }}</small></span></div>
-    {% endfor %}
-    {% for route in routes %}
-    <div class="pr-line">
-      <span class="org-chip {% if route.status == 'done' %}ok{% elif route.status == 'sent' %}gold{% elif route.status == 'failed' %}bad{% else %}off{% endif %}">{{ route.get_status_display }}</span>
-      <span class="who"><b>{{ route.raider.name }}</b> ← {{ route.target_name }}
-        <small>{% if route.status == "planned" %}às {{ route.due_from|date:"d/m H:i" }}{% else %}{{ route.created_at|date:"d/m H:i" }}{% endif %}{% if route.target_points %} · {{ route.target_points|intcomma }} pts{% endif %}{% if route.message %} · {{ route.message }}{% endif %}</small></span>
-    </div>
-    {% empty %}
-    {% if not raids %}<p class="text-sm text-muted" style="margin: 0;">Nenhum ainda.</p>{% endif %}
-    {% endfor %}
-    </div>
-  </section>
-</div>
-
-<section class="org-panel" style="margin-bottom: .9rem; padding: 1rem 1.1rem;">
-  <h3 style="margin-bottom: .6rem;"><i class="bi bi-people"></i> Contas</h3>
-  <div class="pr-acc-grid">
-    {% for r in rows %}
-    <div class="pr-acc{% if not r.eligible %} out{% endif %}">
-      <div class="top">
-        <b title="{{ r.ga.name }}">{{ r.ga.name }}</b>
-        {% if r.role == "campeã" %}<span class="org-chip gold"><i class="bi bi-trophy-fill"></i></span>
-        {% elif r.role %}<span class="org-chip off">{{ r.role }}</span>{% endif %}
-      </div>
-      <div class="pr-stats">
-        <div><small>Rank</small><strong>{% if r.place %}{{ r.place }}º{% else %}—{% endif %}</strong></div>
-        <div><small>Pontos</small><strong>{{ r.capture_points|default_if_none:"—"|intcomma }}</strong></div>
-        <div><small>Trip.</small><strong>{{ r.crew|default_if_none:"—"|intcomma }}</strong></div>
-      </div>
-      <div class="foot">
-        <span>{{ r.lobby }}</span>
-        {% if r.job %}<a href="/jobs/{{ r.job.pk }}/" class="org-chip {% if r.job.status == 'failed' %}bad{% elif r.special %}gold{% else %}ok{% endif %}" style="text-decoration: none; margin-left: auto;">
-          {% if r.special %}ciclo especial{% elif r.final_phase %}fase final{% else %}rodando{% endif %}</a>
-        {% else %}<span class="org-chip off" style="margin-left: auto;">{% if r.fortress %}sem job{% else %}sem fortaleza{% endif %}</span>{% endif %}
-        {% if r.pirates %}<span class="org-chip bad"><i class="bi bi-flag-fill"></i> {{ r.pirates }}</span>{% endif %}
-        {% if r.captchas %}<span class="org-chip gold"><i class="bi bi-puzzle"></i> {{ r.captchas }}</span>{% endif %}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-</section>
-
-{% if history %}
-<section class="org-panel" style="padding: .8rem 1.1rem;">
-  <h3 style="margin-bottom: .4rem;"><i class="bi bi-clock-history"></i> Campeãs dos meses</h3>
-  <div class="pr-chips">
-    {% for h in history %}<span class="pr-chip"><b>{% for c in h.champions %}{{ c.name }}{% if not forloop.last %} · {% endif %}{% endfor %}</b><span>{{ h.month.starts_at|date:"m/Y" }}{% if h.month.status == 'open' %} · agora{% endif %}</span></span>{% endfor %}
-  </div>
-</section>
-{% endif %}
 {% endblock %}

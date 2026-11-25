@@ -95,33 +95,19 @@ class PiracyView(LoginRequiredMixin, View):
             row["must_convert"] = need
             row["cannot_reach"] = b.get("floor") is not None and base is not None and crew is not None and crew < b["floor"] and need is None
         nxt = services.upcoming(month, by_ga) if month else {"planned": [], "waiting": []}
-        if month:
-            members = services.members_now(month)
-            takes = services.champion_takes(month)
-            for number in sorted({m.group for m in members}):
-                of = [m for m in members if m.group == number]
-                pick = lambda role: [by_ga.get(m.game_account_id) or {"ga": m.game_account} for m in of if m.role == role]
-                champion = pick(PiracyMember.CHAMPION)
-                passers, origins = pick(PiracyMember.PASSER), pick(PiracyMember.ORIGIN)
-                # N-215: who may take whose points, by lobby (the game never lets one lobby raid itself)
-                links = services.chain([r["ga"] for r in champion], [r["ga"] for r in passers], [r["ga"] for r in origins])
-                for r in champion:
-                    r["took"] = takes.get(r["ga"].pk, 0)
-                for r in origins:
-                    r["takers"] = [t.name for t in links["takers"][r["ga"].pk]]
-                for r in passers:
-                    r["sources"] = len(links["sources"][r["ga"].pk])
-                groups.append({"number": number, "champion": champion[0] if champion else None, "champions": champion,
-                               "passers": passers, "origins": origins, "projection": projected.get(number),
-                               "blocked": [ga.name for ga in links["blocked"]], "idle": [ga.name for ga in links["idle"]],
-                               "wrong": [ga.name for ga in links["wrong"]]})
+        chain = services.board(month, by_ga) if month else None             # N-255: the page's chain board
+        members = {m.game_account_id for m in month.members.all()} if month else set()
         routes = (list(month.routes.select_related("raider", "target", "outside").order_by("-created_at")[:20]) if month else [])
         history = [{"month": past, "champions": [c.game_account for c in past.champions.all()]}
                    for past in PiracyMonth.objects.filter(server_id=server).prefetch_related("champions__game_account")[:12]]
         own_ranked = sorted([r for r in data.get("rows", []) if r.get("place")], key=lambda r: int(r["place"]))
         return render(request, "piracy/index.html", {
             **data, "server": server, "servers": services.servers(), "clock_human": _clock_human(data.get("clock")),
-            "eligible_count": len(able), "groups": groups,
+            "eligible_count": len(able), "groups": groups, "chain": chain,
+            "outside_plan": [r for r in data.get("rows", []) if r["ga"].pk not in members] if month else [],
+            "share_low": max(0, month.share_percent - services.SHARE_JITTER_DOWN) if month else 0,
+            "share_high": month.share_percent + services.SHARE_JITTER_UP if month else 0,
+            "balance_pct": round(services.BALANCE_SHARE * 100),
             "turn": services.rotation_index(month) + 1 if month else None, "next_turn": services.next_rotation(month) if month else None, "next_raids": nxt["planned"], "waiting": nxt["waiting"], "routes": routes, "history": history, "own_ranked": own_ranked,
             "targets": PiracyTarget.objects.filter(server_id=server).order_by("player_name") if server else [],
             "marked": services.marked_targets(getattr(request, "organization", None), server) if server else [],
@@ -145,7 +131,7 @@ class PiracyView(LoginRequiredMixin, View):
                     if action == "regroup" and current:
                         champions = [c.game_account for c in current.champions.select_related("game_account").order_by("group")]
                         request.POST = request.POST.copy()
-                        for field in ("share_percent", "share_every_hours", "min_win_percent", "min_points"):
+                        for field in ("share_percent", "share_every_hours", "min_win_percent", "min_points", "pair_days", "rotate_days"):
                             request.POST[field] = str(getattr(current, field))
                     if action == "choose":
                         ids = request.POST.getlist("champion")
@@ -155,10 +141,12 @@ class PiracyView(LoginRequiredMixin, View):
                         services.close_month(current, "grupos refeitos")
                         PiracyMonth.objects.filter(pk=current.pk).delete() if not current.routes.exclude(status="skipped").exists() else None
                     month = services.plan_month(request.organization, server, champions=champions,
-                                                share_percent=int(request.POST.get("share_percent") or 10),
+                                                share_percent=int(request.POST.get("share_percent") or 3),
                                                 share_every_hours=int(request.POST.get("share_every_hours") or 24),
                                                 min_win_percent=int(request.POST.get("min_win_percent") or 95),
-                                                min_points=int(request.POST.get("min_points") or 10000))
+                                                min_points=int(request.POST.get("min_points") or 10000),
+                                                pair_days=int(request.POST.get("pair_days") or 3),
+                                                rotate_days=int(request.POST.get("rotate_days") or services.ROTATE_DAYS))
                     names = ", ".join(c.game_account.name for c in month.champions.select_related("game_account"))
                     record("piracy.month_planned", target=month, target_label=f"{server}: {names}")
                     messages.success(request, f"Campeãs do mês: {names}.")
@@ -169,11 +157,11 @@ class PiracyView(LoginRequiredMixin, View):
                     month.share_every_hours = max(1, min(240, int(request.POST.get("share_every_hours") or 24)))
                     month.min_win_percent = max(50, min(100, int(request.POST.get("min_win_percent") or 95)))
                     month.min_points = max(100, int(request.POST.get("min_points") or 10000))
-                    month.rotate_days = max(1, min(30, int(request.POST.get("rotate_days") or 7)))
+                    month.rotate_days = max(1, min(30, int(request.POST.get("rotate_days") or 3)))
+                    month.pair_days = max(1, min(30, int(request.POST.get("pair_days") or 3)))
                     month.save(update_fields=["share_percent", "share_every_hours", "min_win_percent", "min_points",
-                                              "rotate_days", "updated_at"])
-                    messages.success(request, f"As outras contas convertem {month.share_percent}% a cada {month.share_every_hours}h; "
-                                              f"assalto só com {month.min_win_percent}% de chance de vencer ou mais.")
+                                              "rotate_days", "pair_days", "updated_at"])
+                    messages.success(request, "Regras do plano salvas.")
             elif action in ("pause", "resume"):
                 month = services.current_month(server)
                 if month:

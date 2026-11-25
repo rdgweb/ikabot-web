@@ -102,7 +102,7 @@ class PlanTests(Base):
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         self.assertEqual((data["convert_all"], data["hold"]), (True, False))
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")
-        self.assertEqual((data["convert_all"], data["hold"], data["share_percent"], data["route"]), (False, True, 10, None))
+        self.assertEqual((data["convert_all"], data["hold"], data["share_percent"], data["route"]), (False, True, 3, None))
 
     def test_the_champion_takes_only_sure_wins_never_its_lobby_and_once_a_week(self):
         month = self.plan()
@@ -180,7 +180,7 @@ class EligibilityTests(Base):
 
 class PageTests(Base):
     def test_the_page_plans_adds_targets_and_closes(self):
-        self.assertContains(self.client.get("/pirataria/"), "Campeãs do mês")
+        self.assertContains(self.client.get("/pirataria/"), "Sem plano neste mês")
         self.client.post("/pirataria/", {"action": "plan", "server": "s1-br", "share_percent": "20", "share_every_hours": "12"})
         month = PiracyMonth.objects.get(status="open")
         self.assertEqual((month.share_percent, month.share_every_hours), (20, 12))
@@ -315,8 +315,9 @@ class BudgetTests(Base):
         self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         route = PiracyRoute.objects.get(status="planned")
         page = self.client.get("/pirataria/?server=s1-br").content.decode()
-        self.assertIn("Próximos ataques", page)
-        self.assertIn(timezone.localtime(route.due_from).strftime("%d/%m %H:%M"), page)
+        self.assertIn("Agora", page)                                       # N-255: the feed
+        self.assertIn(f"{champion.name} ← {route.target.name}", page)
+        self.assertIn("sai agora", page)
 
 
 class CapWinsTests(Base):
@@ -386,8 +387,7 @@ class GroupingTests(ChainChecks, Base):
         for ga in big[2:4]:
             month.members.create(game_account=ga, role="origin", group=group)
         page = self.client.get("/pirataria/?server=s1-br").content.decode()
-        self.assertIn("sem origem de outro lobby", page)
-        self.assertIn("Refazer grupos corrige", page)
+        self.assertIn("não alcança as origens", page)                     # N-255: the passer's line in the chain
 
     def test_regroup_keeps_the_champions(self):
         month = self.plan()
@@ -464,11 +464,11 @@ class JobCardTests(Base):
         month = self.plan()
         roles = services.month_roles(month)
         champion = next(ga for ga in self.accounts if roles.get(ga.pk) == "campeã")
-        holder = next(ga for ga in self.accounts if roles.get(ga.pk) in ("origem", "passagem"))
+        holder = next(ga for ga in self.accounts if roles.get(ga.pk) == "origem")
         self.assertEqual(JobListView._piracy_plan(self.jobs[champion.pk])["text"], "converte tudo e junta os pontos")
         shown = JobListView._piracy_plan(self.jobs[holder.pk])
         self.assertEqual(shown["role"], roles[holder.pk])
-        self.assertTrue(shown["text"].startswith(f"converte {month.share_percent}% a cada {month.share_every_hours}h"))
+        self.assertTrue(shown["text"].startswith(f"converte {month.share_percent - 2}-{month.share_percent + 1}% a cada {month.share_every_hours}h"))
         self.assertFalse(PiracyRoute.objects.exists())                  # reading the card draws nothing
         services.close_month(month)
         self.assertIsNone(JobListView._piracy_plan(self.jobs[holder.pk]))
@@ -576,3 +576,47 @@ class ConvertToWinTests(Base):
         # the conversion came in: nothing more to convert, the same raid goes out
         again = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}&crew={need + 10}&points=15000")
         self.assertEqual((again["route"]["route_id"], again["route"]["convert_points"]), (data["route"]["route_id"], 0))
+
+
+
+class MonthRollTests(Base):
+    """N-255: at the ranking turn the next month starts by itself, with champions that were not yet."""
+
+    def test_the_next_month_starts_at_the_turn(self):
+        month = self.plan(pair_days=4, rotate_days=3)
+        before = set(month.champions.values_list("game_account_id", flat=True))
+        PiracyMonth.objects.filter(pk=month.pk).update(ends_at=timezone.now() - timedelta(minutes=1))
+        services.expire()
+        month.refresh_from_db()
+        self.assertEqual(month.status, "closed")
+        new = PiracyMonth.objects.get(status="open")
+        self.assertFalse(before & set(new.champions.values_list("game_account_id", flat=True)))
+        self.assertEqual((new.pair_days, new.rotate_days), (4, 3))
+        origin = new.members.filter(role="origin").first().game_account
+        self.assertTrue(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["hold"])   # never out of a plan
+
+
+class TurnPassersTests(Base):
+    """N-255: a turn's passers are decided once and kept; the passer converts ahead the least that beats an origin."""
+
+    def test_turn_kept_and_passer_preconverts(self):
+        month = self.plan()
+        later = month.starts_at + timedelta(days=month.rotate_days, minutes=1)
+        first = {m.game_account_id for m in services.members_now(month, later) if m.role == "passer"}
+        month.refresh_from_db()
+        self.assertTrue(month.turns)                                      # decided and kept
+        for ga in self.accounts:
+            self.set_strength(ga, points=20000, crew=5000)                # the crews change...
+        again = {m.game_account_id for m in services.members_now(month, later) if m.role == "passer"}
+        self.assertEqual(first, again)                                    # ...the turn does not
+        members = services.members_now(month)
+        passer = next(m.game_account for m in members if m.role == "passer")
+        for ga in self.accounts:
+            self.set_strength(ga, points=15000, crew=1600)
+        for m in members:
+            if m.role == "champion":
+                self.set_strength(m.game_account, points=0, crew=30000)   # a champion beats its passers
+        self.set_strength(passer, points=20000, crew=1500)
+        plan = services.plan_for(passer)
+        self.assertGreater(plan["preconvert_points"], 0)
+        self.assertEqual(plan["share_percent"], 0)                        # a passer has no periodic share
