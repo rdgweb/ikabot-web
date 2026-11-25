@@ -758,7 +758,7 @@ def _payload(route, info) -> dict:
             "target_name": route.target_name, **info}
 
 
-def plan_for(game_account, now: datetime | None = None) -> dict | None:
+def plan_for(game_account, now: datetime | None = None, fresh: dict | None = None) -> dict | None:
     """The account's part in the month's plan now, read only (nothing drawn): None when it is in no running plan.
     Champions convert all; the others hold their points, converting share_percent once every share_every_hours up to
     crew_cap (in the final phase of the ranking nobody converts)."""
@@ -783,6 +783,8 @@ def plan_for(game_account, now: datetime | None = None) -> dict | None:
            "bonus_max": CREW_BONUS_MAX, "bonus_full": CREW_BONUS_FULL}
     if hold:
         read = {m.game_account_id: strength(m.game_account) for m in now_members if m.group == member.group}
+        if fresh:
+            read[game_account.pk] = {**read.get(game_account.pk, {}), **fresh}
         mine_budget = budgets(month, {k: v["crew"] for k, v in read.items()},
                               {k: v["points"] for k, v in read.items() if v["points"] is not None}).get(game_account.pk) or {}
         out.update(crew_cap=mine_budget.get("cap"), crew_floor=mine_budget.get("floor"), base_cap=mine_budget.get("cap_base"))
@@ -792,7 +794,21 @@ def plan_for(game_account, now: datetime | None = None) -> dict | None:
     return out
 
 
-def next_for(game_account, now: datetime | None = None) -> dict:
+def _convert_to_win(month, mine: dict, theirs: dict, base_cap) -> int | None:
+    """N-254: the capture points a passer converts so it beats this account with the month's chance (0: it already
+    does; None: no amount does). Only the points above the bonus limit raise the strength, and the base never goes
+    above what lets its champion still beat it (base_cap)."""
+    if mine.get("crew") is None or theirs.get("crew") is None:
+        return None
+    if sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
+        return 0
+    if mine.get("points") is None:
+        return None
+    need = int(theirs["crew"] * ratio_for(month.min_win_percent)) + 1
+    return convert_for(mine["crew"] - crew_bonus(mine["points"]), int(mine["points"]), need, base_cap)
+
+
+def next_for(game_account, now: datetime | None = None, fresh: dict | None = None) -> dict:
     """What the Pirate Fortress job of this account does for the plan now:
     {"route": {...} | None, "hold": bool, "convert_all": bool, "share_percent": int, "share_every_hours": int}.
     Champions convert all their points (convert_all) and, after gathering, raid the targets added by hand. The others
@@ -801,7 +817,8 @@ def next_for(game_account, now: datetime | None = None) -> dict:
     capture points."""
     now = now or timezone.now()
     expire(now)
-    plan = plan_for(game_account, now)
+    fresh = {k: int(v) for k, v in (fresh or {}).items() if v is not None}
+    plan = plan_for(game_account, now, fresh)
     if plan is None:
         return {"route": None, "hold": False}
     member, month, now_members, role, hold = plan["member"], plan["month"], plan["members"], plan["role"], plan["hold"]
@@ -816,11 +833,22 @@ def next_for(game_account, now: datetime | None = None) -> dict:
             return {"route": None, "hold": hold, **extra, "route_at": int(open_route.due_from.timestamp())}
         info = _target_info(open_route.target) if open_route.target_id else _outside_info(open_route.outside)
         if info:
-            return {"route": _payload(open_route, info), "hold": hold, **extra}
+            payload = _payload(open_route, info)
+            if open_route.target_id and role == PiracyMember.PASSER:
+                # N-254: again with the numbers of now — what is still missing (0 once the conversion came in)
+                convert = _convert_to_win(month, {**strength(game_account), **fresh}, strength(open_route.target), plan.get("base_cap"))
+                if convert is None:
+                    PiracyRoute._base_manager.filter(pk=open_route.pk).update(status=PiracyRoute.SKIPPED,
+                                                                              message="a passagem não vence mais esse alvo")
+                    open_route = None
+                else:
+                    payload["convert_points"] = convert
+            if open_route is not None:
+                return {"route": payload, "hold": hold, **extra}
     if role == PiracyMember.ORIGIN:
         return {"route": None, "hold": hold, **extra}
     level = PiracyMember.LEVEL[role]
-    mine = strength(game_account)
+    mine = {**strength(game_account), **fresh}
     week = max(1, int((now - month.starts_at).total_seconds() // (7 * 86400)) + 1)
     recent = set(PiracyRoute._base_manager.filter(raider=game_account, created_at__gte=now - timedelta(days=PAIR_DAYS))
                  .exclude(status=PiracyRoute.SKIPPED).values_list("target_id", flat=True))
@@ -833,27 +861,37 @@ def next_for(game_account, now: datetime | None = None) -> dict:
                 or ga.pk in recent or ga.pk in taken):
             continue
         theirs = strength(ga)
-        if (theirs["points"] or 0) < month.min_points or not sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
+        if (theirs["points"] or 0) < month.min_points:
             continue
+        if role == PiracyMember.PASSER:
+            # N-254: a passer that does not beat it yet converts what is missing first (the fine control)
+            convert = _convert_to_win(month, mine, theirs, plan.get("base_cap"))
+            if convert is None:
+                continue
+        else:
+            if not sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
+                continue
+            convert = 0
         if role == PiracyMember.CHAMPION and _leave_to_other_champion(month, game_account, ga, theirs, now_members, member.group):
             continue
-        candidates.append((theirs["points"], theirs["crew"], ga))
+        candidates.append((theirs["points"], convert, theirs["crew"], ga))
     # N-218: as soon as possible (a time drawn within 24h left the points idle and open to others) — but never at or
     # after the ranking turn: then every account's capture points go back to 0 and a raid takes nothing
     if month.turn_at and now < month.turn_at and now >= month.turn_at - TURN_MARGIN:
         return {"route": None, "hold": hold, **extra}
-    for points, crew, ga in sorted(candidates, key=lambda c: -c[0]):
+    for points, convert, crew, ga in sorted(candidates, key=lambda c: (-c[0], c[1])):
         if not _target_info(ga):
             continue
         when = now
-        until = when + timedelta(hours=ROUTE_HOURS)
+        # a conversion first takes its time: the raid waits for it
+        until = when + timedelta(hours=ROUTE_HOURS * (2 if convert else 1))
         if month.turn_at and now < month.turn_at:
             until = min(until, month.turn_at)
         PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
                                    target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
                                    due_from=when, due_until=until)
         route = PiracyRoute._base_manager.filter(raider=game_account, target=ga, status=PiracyRoute.PLANNED).order_by("-created_at").first()
-        return {"route": _payload(route, _target_info(ga)), "hold": hold, **extra}
+        return {"route": {**_payload(route, _target_info(ga)), "convert_points": convert}, "hold": hold, **extra}
     return {"route": _outside_route(month, member, game_account, mine, now, week, role), "hold": hold, **extra}
 
 

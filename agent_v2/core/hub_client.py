@@ -666,9 +666,15 @@ class HubClient:
         [island ids]}}: the troops no job may use or move (the assault team) and the islands other barbarian jobs farm."""
         return self._get("/api/agent/troops/reserved/", {"game_account_id": game_account_id, "exclude_job_id": exclude_job_id})
 
-    def get_piracy_next(self, game_account_id: str) -> dict:
-        """GET /api/agent/piracy/next/ — N-211: the month's plan for this account: {"route": {...} | None, "hold": bool}."""
-        return self._get("/api/agent/piracy/next/", {"game_account_id": game_account_id})
+    def get_piracy_next(self, game_account_id: str, crew: int | None = None, points: int | None = None) -> dict:
+        """GET /api/agent/piracy/next/ — N-211: the month's plan for this account: {"route": {...} | None, "hold": bool}.
+        N-254: with the strength and points just read, so the hub decides on the numbers of now."""
+        params = {"game_account_id": game_account_id}
+        if crew is not None:
+            params["crew"] = int(crew)
+        if points is not None:
+            params["points"] = int(points)
+        return self._get("/api/agent/piracy/next/", params)
 
     def report_piracy_route(self, route_id: str, status: str, message: str = "") -> dict:
         """POST /api/agent/piracy/routes/<id>/ — N-211: sent | done | failed."""

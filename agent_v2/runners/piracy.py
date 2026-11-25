@@ -284,14 +284,15 @@ class PiracyMissionRunner(BaseRunner):
 
     # ── N-211: the month's plan (champions) ──────────────────────────────────────────────────────────────────────
 
-    def _plan_next(self, game_account_id: str) -> dict[str, Any]:
+    def _plan_next(self, game_account_id: str, crew: int | None = None, points: int | None = None) -> dict[str, Any]:
         """What the hub's plan asks of this account now: whom to raid (an account of another lobby of the same
         organization, surely beaten, or a target added by hand), and how to convert: a champion converts all, the
         others keep their points and convert share_percent once every share_every_hours."""
         empty = {"route": None, "hold": False, "convert_all": False, "share_percent": 0, "share_every_hours": 24,
                  "crew_cap": None, "crew_floor": None, "route_at": 0, "base_cap": None, "bonus_max": 0, "bonus_full": 0}
         try:
-            data = self.hub.get_piracy_next(game_account_id) or {}
+            data = (self.hub.get_piracy_next(game_account_id, crew, points) if crew is not None or points is not None
+                    else self.hub.get_piracy_next(game_account_id)) or {}
         except Exception:
             # N-216 (23/11): with no answer the account may well be in a plan: keep the points this round (converting
             # by the job's own mode would spend what the plan keeps)
@@ -1144,7 +1145,8 @@ class PiracyMissionRunner(BaseRunner):
                 inputs = {**inputs, "_plan_route_id": "", "_plan_points_before": 0}
                 _state_inputs.update(_plan_route_id="", _plan_points_before=0)
             # ...then how to convert: a champion all, the others keep their points and convert a share now and then
-            plan = self._plan_next(game_account_id)
+            plan = self._plan_next(game_account_id, complete_crew_points, capture_points)
+            plan_convert = _to_int((plan.get("route") or {}).get("convert_points"), 0)
             if plan.get("unreachable"):
                 self.log(jid, "warn", "Plano do mês: o hub não respondeu; não converto nesta rodada")
             if plan["convert_all"]:
@@ -1154,6 +1156,8 @@ class PiracyMissionRunner(BaseRunner):
                 else:
                     convert_mode = "never"
                     self.log(jid, "info", "Plano do mês: campeã na fase final — juntando os pontos, sem converter")
+            elif plan["hold"] and plan_convert > 0:
+                convert_mode = "never"                   # N-254: the raid's own conversion comes below
             elif plan["hold"]:
                 convert_mode = "never"
                 try:
@@ -1185,12 +1189,30 @@ class PiracyMissionRunner(BaseRunner):
                 self.log(jid, "error", f"SEGURANCA: o plano pediu assalto em {route.get('player_name')}, do mesmo lobby; recusado")
                 self._report_route(jid, str(route.get("route_id") or ""), "failed", "mesmo lobby")
                 route = None
+            if route and plan_convert > 0:
+                # N-254: convert exactly what is missing to beat this target, wait for it to come in, then raid
+                converting_until = _to_int(inputs.get("_plan_convert_until"), 0)
+                name = route.get("player_name") or route.get("target_name") or "?"
+                if converting_until <= now_ts:
+                    factor = max(1, _to_int(state.get("conversion_factor"), 10))
+                    crew = min(-(-plan_convert // factor), capture_points // factor)
+                    if crew > 0:
+                        client.convert_piracy_points(city_id, crew)
+                        converting_until = now_ts + self._conversion_seconds(state, crew)
+                        _state_inputs["_plan_convert_until"] = converting_until
+                        self.log(jid, "info", f"Plano do mês: convertidos {crew * factor} pontos em {crew} de tripulação "
+                                              f"para vencer {name}; o roubo sai quando a conversão entrar")
+                wait = max(60, converting_until - now_ts + 60)
+                self.log(jid, "info", f"Plano do mês: esperando a conversão para roubar {name} (volto em {wait // 60} min)")
+                self.save_game_client(game_account_id, client)
+                return RunnerResult(success=True, reschedule_seconds=wait, reschedule_inputs={**inputs, **_state_inputs},
+                                    data={"status": "plan_converting", "route": str(route.get("route_id") or "")})
             if route:
                 raid = self._direct_raid(jid, client, city_id, route)
                 if raid is not None:
                     route_id = str(route.get("route_id") or "")
                     self._report_route(jid, route_id, "sent", "assalto direto da fortaleza")
-                    self.log(jid, "info", f"Plano do mês: assalto em {route.get('player_name')} saiu da fortaleza")
+                    self.log(jid, "info", f"Plano do mês: assalto em {route.get('player_name') or route.get('target_name') or '?'} saiu da fortaleza")
                     self.save_game_client(game_account_id, client)
                     wait = max(TARGETED_RECHECK, _to_int(raid.get("time_remaining"), 0) + MISSION_BUFFER)
                     return RunnerResult(

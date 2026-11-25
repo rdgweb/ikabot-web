@@ -434,3 +434,21 @@ class PeriodSwitchTests(unittest.TestCase):
         self.assertEqual(fit(15, 9, left(self.CFG, self.at(22))), 9)       # the fortress caps it
         self.assertIsNone(fit(15, 17, 60 - PIRACY_MODULE.SWITCH_TOLERANCE - 1))   # nothing fits: wait
         self.assertEqual(fit(9, 17, None), 9)                              # not by time: as configured
+
+
+class FreshNumbersTests(unittest.TestCase):
+    """N-254: the agent sends the strength and points it has just read; the hub decides on them."""
+
+    def test_plan_next_sends_the_numbers_of_now(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        asked = []
+
+        class Hub:
+            def get_piracy_next(self, game_account_id, crew=None, points=None):
+                asked.append((game_account_id, crew, points))
+                return {"route": {"route_id": "r1", "convert_points": 5000}, "hold": True}
+
+        runner.hub = Hub()
+        plan = runner._plan_next("ga", 1500, 20000)
+        self.assertEqual(asked, [("ga", 1500, 20000)])
+        self.assertEqual(plan["route"]["convert_points"], 5000)

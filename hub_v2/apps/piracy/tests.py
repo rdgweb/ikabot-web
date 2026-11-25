@@ -551,3 +551,26 @@ class CrewBonusTests(Base):
         of_big = next(r for r in waiting if r["ga"] in big[1:])
         self.assertIn(f"{middle[0].name} vence (100%)", of_big["why"])
         self.assertNotIn("ninguém", of_big["why"])
+
+
+class ConvertToWinTests(Base):
+    """N-254: a passer that does not beat an origin yet gets the raid with the points to convert first; the hub decides
+    on the strength the agent has just read."""
+
+    def test_the_passer_converts_what_is_missing_then_raids(self):
+        month = self.plan()
+        members = services.members_now(month)
+        passer = next(m.game_account for m in members if m.role == "passer")
+        origin = next(m.game_account for m in members if m.role == "origin" and m.game_account.account_id != passer.account_id)
+        for ga in self.accounts:
+            self.set_strength(ga, points=0, crew=30000 if any(m.role == "champion" and m.game_account_id == ga.pk for m in members) else 1000)
+        self.set_strength(origin, points=15000, crew=1600)
+        self.set_strength(passer, points=0, crew=0)                          # what the job saved last time (old)
+        data = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}&crew=1500&points=20000")
+        need = int(1600 * services.ratio_for(month.min_win_percent)) + 1
+        self.assertEqual(data["route"]["target_game_account_id"], str(origin.pk))
+        self.assertEqual(data["route"]["convert_points"], services.convert_for(100, 20000, need, None))
+        self.assertGreater(data["route"]["convert_points"], 0)
+        # the conversion came in: nothing more to convert, the same raid goes out
+        again = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}&crew={need + 10}&points=15000")
+        self.assertEqual((again["route"]["route_id"], again["route"]["convert_points"]), (data["route"]["route_id"], 0))

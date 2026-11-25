@@ -21,7 +21,14 @@ class NextView(APIView):
         ga = GameAccount._base_manager.filter(pk=str(request.query_params.get("game_account_id") or "")).first()
         if ga is None:
             return Response({"route": None, "hold": False})
-        return Response(services.next_for(ga))
+        # N-254: the strength and points the agent has just read (the job's saved ones are from the last run)
+        fresh = {}
+        for key, param in (("crew", "crew"), ("points", "points")):
+            try:
+                fresh[key] = int(request.query_params[param])
+            except (KeyError, TypeError, ValueError):
+                pass
+        return Response(services.next_for(ga, fresh=fresh))
 
 
 class RouteReportView(APIView):
