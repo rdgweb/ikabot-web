@@ -452,3 +452,24 @@ class FreshNumbersTests(unittest.TestCase):
         plan = runner._plan_next("ga", 1500, 20000)
         self.assertEqual(asked, [("ga", 1500, 20000)])
         self.assertEqual(plan["route"]["convert_points"], 5000)
+
+
+class BonusStepTests(unittest.TestCase):
+    """Measured 25/11: the bonus is all or nothing — 1.400 from 7.000 points, 0 below."""
+
+    def test_all_or_nothing(self):
+        plan = {"bonus_max": 1400, "bonus_full": 7000}
+        self.assertEqual([PiracyMissionRunner._bonus(p, plan) for p in (0, 5769, 6999, 7000, 40000)], [0, 0, 0, 1400, 1400])
+
+    def test_below_the_limit_converting_only_adds(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.log = lambda *a, **k: None
+        converted = []
+
+        class Game:
+            def convert_piracy_points(self, city_id, crew):
+                converted.append(crew)
+
+        state = {"conversion_factor": 10, "complete_crew_points": 100}      # 5.000 points: no bonus, base 100
+        plan = {"bonus_max": 1400, "bonus_full": 7000, "base_cap": None}
+        self.assertEqual(runner._floor_convert("j", Game(), "1", state, 5000, 400, plan), 300)

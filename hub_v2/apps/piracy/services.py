@@ -187,7 +187,7 @@ START_DELAY = timedelta(minutes=15)   # the plan starts this long after it is dr
 TURN_MARGIN = timedelta(minutes=30)   # the last raid before a ranking turn is drawn at least this long before it
 PAIR_DAYS = 3                # the same raider takes from the same account once in this many days (N-217: was 7)
 CREW_BONUS_MAX = 1400        # N-218: crew strength the held capture points add (the game's completeCrewPoints has it)
-CREW_BONUS_FULL = 7000       # points that give the whole bonus (Rodrigo); below it assumed proportional
+CREW_BONUS_FULL = 7000       # points that give the bonus (Rodrigo; measured: all or nothing)
 ROTATE_DAYS = 3              # N-217: passers and origins swap every this many days (the ranking runs 21 days)
 BALANCE_SHARE = 0.25         # N-217: a champion this far ahead of the other (share of its own take, at least
                              # min_points) leaves a target both can take to the other one
@@ -607,8 +607,9 @@ def strength(game_account) -> dict:
 def crew_bonus(points: int | None) -> int:
     """N-218: the crew strength the capture points held add — the game's total strength (completeCrewPoints) is the
     base crew plus this. Converting points into crew takes it away; taking points in a raid brings it."""
-    held = max(0, int(points or 0))
-    return min(CREW_BONUS_MAX, held * CREW_BONUS_MAX // CREW_BONUS_FULL)
+    # measured 25/11 (strength - base - crew bought): 0 with 4.634 and 5.769 points, 1.400 with 10.179 and more —
+    # all or nothing from CREW_BONUS_FULL, as Rodrigo said
+    return CREW_BONUS_MAX if int(points or 0) >= CREW_BONUS_FULL else 0
 
 
 def convert_for(base: int, points: int, floor: int | None, cap_base: int | None, factor: int = 10) -> int | None:

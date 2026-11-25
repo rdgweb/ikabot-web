@@ -527,8 +527,10 @@ class CrewBonusTests(Base):
     accounts waiting says who wins them."""
 
     def test_the_bonus_and_what_to_convert(self):
-        self.assertEqual((services.crew_bonus(0), services.crew_bonus(3500), services.crew_bonus(7000), services.crew_bonus(40000)),
-                         (0, 700, 1400, 1400))
+        self.assertEqual((services.crew_bonus(0), services.crew_bonus(5769), services.crew_bonus(7000), services.crew_bonus(40000)),
+                         (0, 0, 1400, 1400))                                # all or nothing (measured 25/11)
+        # below the limit the bonus is already 0: converting there only adds
+        self.assertEqual(services.convert_for(100, 5000, 400, None), 3000)
         # base 100 with 20.000 points (strength 1.500): 2.000 needs 500 crew, i.e. 5.000 points
         self.assertEqual(services.convert_for(100, 20000, 2000, None), 5000)
         # with 8.000 points only 1.000 are above the limit: 1.700 cannot be reached by converting

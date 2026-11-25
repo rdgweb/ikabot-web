@@ -338,7 +338,7 @@ class PiracyMissionRunner(BaseRunner):
         top, full = plan.get("bonus_max") or 0, plan.get("bonus_full") or 0
         if not top or not full:
             return 0
-        return min(top, max(0, points) * top // full)
+        return top if points >= full else 0             # all or nothing (measured 25/11)
 
     @staticmethod
     def _conversion_seconds(state: dict[str, Any], crew: int) -> int:
@@ -940,6 +940,8 @@ class PiracyMissionRunner(BaseRunner):
                 "last_crew_points": crew_points,
                 "last_complete_crew_points": complete_crew_points,
                 "last_basic_crew_points": int(state.get("basic_crew_points") or 0),
+                "last_conversion_time_base": int(state.get("conversion_time_base") or 0),
+                "last_conversion_time_per_unit": int(state.get("conversion_time_per_unit") or 0),
                 "last_fortress_level": fortress_level,
                 "last_time_remaining": time_remaining,
                 "last_state_updated_at": int(time.time()),
