@@ -821,6 +821,44 @@ _TRADE_TO_CITY_KEY = {
 }
 
 
+def _plan_step_identity(step):
+    """N-185: what makes two plan steps the same step, whatever their number in the list."""
+    return (
+        str(step.get("city_id") or step.get("city") or ""),
+        str(step.get("building_id") or step.get("building_type") or ""),
+        str(step.get("mode") or "upgrade"),
+        str(step.get("building_position") or step.get("preferred_position") or ""),
+        str(step.get("target_level") or ""),
+    )
+
+
+def _remap_step_marks(inputs, old_to_new):
+    """N-185: the numbers the agent keeps (skipped, blocked, paused steps) follow their steps to the new numbering."""
+    for key in ("skipped_step_indices", "blocked_step_indices"):
+        old = inputs.get(key)
+        if not isinstance(old, list):
+            continue
+        inputs[key] = sorted({old_to_new[_safe_int(i)] for i in old if _safe_int(i) in old_to_new})
+    paused = inputs.get("unconfirmed_steps")
+    if isinstance(paused, dict):
+        moved = {}
+        for mark, value in paused.items():
+            city_id, _, index = str(mark).rpartition(":")
+            if _safe_int(index) in old_to_new:
+                moved[f"{city_id}:{old_to_new[_safe_int(index)]}"] = value
+        inputs["unconfirmed_steps"] = moved
+
+
+def _construction_plan_job(job):
+    """N-185: the job that owns a plan's reservations — the root of the chain, the one the agent syncs them on."""
+    root_id = job.root_job_id or job.pk
+    if str(job.pk) == str(root_id):
+        return job
+    return (Job.objects.filter(pk=root_id, action_code=1002).first()
+            or Job.objects.filter(root_job_id=root_id, action_code=1002).order_by("created_at").first()
+            or job)
+
+
 def _reorder_construction_plan(steps, preview_steps):
     """Reordena o plano por prioridade de execucao (o que deve construir antes):
     primeiro o que da pra pagar agora, depois por menor tempo (base_seconds) e
@@ -3786,7 +3824,16 @@ class JobSubmitView(LoginRequiredMixin, View):
             existing_inputs = {}
 
         existing_plan = existing_inputs.get("construction_plan_json") or []
-        merged_plan = list(existing_plan) + list(new_steps)
+        # N-185: a step already in the plan is not added again (Polis had the same Armazém three times)
+        known = {_plan_step_identity(step) for step in existing_plan if isinstance(step, dict)}
+        new_steps = [step for step in new_steps if _plan_step_identity(step) not in known]
+        # N-185: remember each step's current number, so what the agent marked follows the step after the reorder
+        tagged = []
+        for position, step in enumerate(existing_plan, start=1):
+            step = dict(step)
+            step["_old_index"] = _safe_int(step.get("index"), position) or position
+            tagged.append(step)
+        merged_plan = tagged + [dict(step) for step in new_steps]
 
         # Preserve modifiers from existing job
         research_reduction = existing_inputs.get("research_reduction", 14)
@@ -3802,6 +3849,12 @@ class JobSubmitView(LoginRequiredMixin, View):
         )
 
         merged_plan, _merged_preview = _reorder_construction_plan(merged_plan, plan_preview.steps)
+        old_to_new = {}
+        for position, step in enumerate(merged_plan, start=1):
+            old = step.pop("_old_index", None)
+            if old is not None:
+                old_to_new[_safe_int(old)] = _safe_int(step.get("index"), position) or position
+        _remap_step_marks(existing_inputs, old_to_new)
         existing_inputs["construction_plan_json"] = merged_plan
         existing_inputs["construction_plan_steps"] = _merged_preview
         existing_inputs["construction_summary"] = {
@@ -3815,10 +3868,14 @@ class JobSubmitView(LoginRequiredMixin, View):
         existing_job.inputs_json = json.dumps(existing_inputs)
         existing_job.save(update_fields=["inputs_json", "updated_at"])
 
-        # Recreate reservations for the full merged plan
-        existing_job.construction_reservations.all().delete()
-        self._create_construction_reservations(existing_job, plan_preview)
-        self._deactivate_stale_construction_reservations(existing_job)
+        # Recreate reservations for the full merged plan — N-185: on the plan's root job (where the agent keeps them
+        # up to date); a copy on the current link of the chain stayed active after it ended and counted twice
+        plan_job = _construction_plan_job(existing_job)
+        plan_job.construction_reservations.all().delete()
+        if plan_job.pk != existing_job.pk:
+            existing_job.construction_reservations.all().delete()
+        self._create_construction_reservations(plan_job, plan_preview)
+        self._deactivate_stale_construction_reservations(plan_job)
 
         n = len(new_steps)
         resp = HttpResponse(

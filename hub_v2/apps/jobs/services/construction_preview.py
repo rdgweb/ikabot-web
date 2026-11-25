@@ -625,7 +625,24 @@ def build_construction_plan_preview(
                 current_level = slot_level if slot_building_id == building_id else 0
             else:
                 current_level = int(city_state["building_levels"].get(building_id, 0))
-        target_level = max(current_level + 1 if current_level > 0 else 1, _parse_int(step.get("target_level"), 1))
+        asked_level = _parse_int(step.get("target_level"), 0)
+        if asked_level > 0 and current_level >= asked_level:
+            # N-185: already there. It used to become "current + 1" and the plan built a level more than asked
+            # (Oculista 31 for 30, Academia 22 for 20). Kept in the plan, with nothing left to build.
+            info = get_building_info(building_id)
+            preview_steps.append({
+                "index": idx, "city_id": city_id, "city_name": str(city.get("name") or city_id),
+                "building_id": building_id, "building_name": info.get("name", building_id),
+                "building_icon": info.get("icon"), "building_position": str(step.get("building_position") or ""),
+                "mode": step_mode, "slot_types": list(step.get("slot_types") or []),
+                "preferred_position": str(step.get("preferred_position") or ""),
+                "from_level": current_level, "target_level": asked_level, "done": True,
+                "totals": {key: 0 for key in RESOURCE_KEYS}, "reserved_local": {key: 0 for key in RESOURCE_KEYS},
+                "missing": {key: 0 for key in RESOURCE_KEYS}, "base_seconds": 0, "adjusted_seconds": 0,
+                "base_duration": _format_duration(0), "adjusted_duration": _format_duration(0), "level_rows": [],
+            })
+            continue
+        target_level = max(current_level + 1 if current_level > 0 else 1, asked_level or 1)
         level_rows = [row for row in rows if current_level < _parse_int(row.get("level")) <= target_level]
         if not level_rows:
             notes.append(f"Etapa {idx}: nenhuma etapa calculada para {building_id} até {target_level}.")
