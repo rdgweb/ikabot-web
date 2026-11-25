@@ -50,6 +50,7 @@ SINGLE_INSTANCE_BUILDINGS = {
 }
 MIN_RECHECK_SECONDS = 5 * 60
 TRANSPORT_RECHECK_SECONDS = 30 * 60
+UNCONFIRMED_MAX_WAIT_SECONDS = 6 * 60 * 60  # N-220: longest pause after the game ignores a build
 FINISH_BUFFER_SECONDS = 2 * 60
 DONOR_RESERVE_DEFAULT = 5_000
 INTERNAL_MARKET_MIN_BATCH = 5_000
@@ -578,6 +579,55 @@ def _parse_live_sidebar_costs(html: str) -> dict[str, int]:
         elif "sulfur" in classes:
             costs["sulfur"] = _clean_number(body)
     return costs
+
+
+_BUILD_COST_CLASSES = {"wood": "wood", "wine": "wine", "marble": "marble", "glass": "glas", "crystal": "glas",
+                       "glas": "glas", "sulfur": "sulfur"}
+
+
+def _parse_build_ground_costs(html: str, building_id: str) -> dict[str, int] | None:
+    """N-220: the real cost of a NEW building, read from the empty-slot screen (view=buildingGround).
+
+    The game lists each building it can put on the slot as <li class="building <type>"> with its cost list inside.
+    The plan's estimate can be lower than the game's (the account may lack a reduction the estimate counts), and
+    then the game ignores the build silently — this is the number that decides.
+    """
+    if not html:
+        return None
+    wanted = _building_ids_to_match(_normalize_building_id(building_id)) | _building_ids_to_match(str(building_id or ""))
+    starts = list(re.finditer(r'<li class="building ([^"]+)"', html, re.IGNORECASE))
+    for i, match in enumerate(starts):
+        tokens = [token for token in match.group(1).split() if token]
+        if not tokens or (tokens[0] not in wanted and _normalize_building_id(tokens[0]) not in wanted):
+            continue
+        block = html[match.end():starts[i + 1].start() if i + 1 < len(starts) else len(html)]
+        costs = {key: 0 for key in RESOURCE_KEYS}
+        for res in re.finditer(r'<li class="([^"]+)"[^>]*>(.*?)</li>', block, re.IGNORECASE | re.DOTALL):
+            classes = {token for token in res.group(1).split() if token}
+            if "time" in classes:
+                continue
+            key = next((_BUILD_COST_CLASSES[c] for c in classes if c in _BUILD_COST_CLASSES), None)
+            if key:
+                costs[key] = _clean_number(res.group(2))
+        return costs if any(costs.values()) else None
+    return None
+
+
+def _new_build_position(city: dict[str, Any] | None, pending: dict[str, Any]) -> int | None:
+    """N-220: the slot a NEW building goes to — the plan's preferred one when free, else the first free fitting one
+    (the same choice the build makes)."""
+    if not city:
+        return None
+    allowed_types = set(pending.get("slot_types") or [])
+    preferred = _to_int(pending.get("preferred_position"), 0)
+    if preferred > 0:
+        for item in city.get("buildings") or []:
+            if _to_int(item.get("position"), -1) != preferred or str(item.get("building") or "").strip() != "empty":
+                continue
+            slot_type = str(item.get("type") or "").strip()
+            if not allowed_types or not slot_type or slot_type in allowed_types:
+                return preferred
+    return _find_empty_position(city, allowed_types=allowed_types or None)
 
 
 def _parse_live_sidebar_button_state(html: str) -> dict[str, Any]:
@@ -1181,6 +1231,9 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             step_failures: list[dict[str, Any]] = []
             _skipped_step_indices: list[int] = list(inputs.get("skipped_step_indices") or [])
             _blocked_step_indices: list[int] = list(inputs.get("blocked_step_indices") or [])
+            # N-220: steps the game did not confirm — {"<city_id>:<index>": {"n": tries, "until": epoch}}
+            _unconfirmed: dict[str, dict[str, Any]] = {
+                str(k): dict(v) for k, v in dict(inputs.get("unconfirmed_steps") or {}).items() if isinstance(v, dict)}
 
             # Live-verify cities where snapshot indicated a building is upgrading.
             # If the game doesn't confirm it (stale snapshot after cancel or completion),
@@ -1370,6 +1423,20 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         ready_steps.append((pending, city, level_row))
 
             for pending, city, level_row in ready_steps:
+                _uc_key = f"{pending['city_id']}:{_to_int(pending.get('index'), 0)}"
+                _uc = _unconfirmed.get(_uc_key) or {}
+                _uc_left = int(float(_uc.get("until") or 0) - time.time())
+                if _uc_left > 0:
+                    # N-220: the game ignored this step last time; wait out its pause before trying again
+                    new_waits.append(
+                        {
+                            "status": "waiting_unconfirmed_backoff",
+                            "wait_seconds": max(60, _uc_left),
+                            "city_id": pending["city_id"],
+                            "building_id": pending["building_id"],
+                        }
+                    )
+                    continue
                 try:
                     next_level = pending["next_level"]
                     building_id = _normalize_building_id(pending["building_id"])
@@ -1789,6 +1856,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                         base_adj = _to_int(level_row.get("adjusted_seconds"), 0)
                         delay = max(90, base_adj + FINISH_BUFFER_SECONDS)
                     delays.append(delay)
+                    _unconfirmed.pop(_uc_key, None)
                     started.append(
                         {
                             "city_id": pending["city_id"],
@@ -1831,16 +1899,21 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                             "error": str(step_exc),
                         }
                     )
+                    # N-220: each refusal doubles-plus the pause (5m, 15m, 45m, 2h15, then 6h), never every 5 min forever
+                    _uc_n = _to_int((_unconfirmed.get(_uc_key) or {}).get("n"), 0) + 1
+                    _uc_wait = min(UNCONFIRMED_MAX_WAIT_SECONDS, MIN_RECHECK_SECONDS * 3 ** (_uc_n - 1))
+                    _unconfirmed[_uc_key] = {"n": _uc_n, "until": int(time.time()) + _uc_wait}
                     self.log(
                         jid,
                         "warn",
-                        f"Etapa nao confirmada: {_city_name(city)} | {pending['building_name']} | {step_exc}",
+                        f"Etapa nao confirmada: {_city_name(city)} | {pending['building_name']} | {step_exc}"
+                        f" | tentativa {_uc_n}; nova tentativa em {_format_duration(_uc_wait)}",
                     )
                     refresh_needed = True
                     new_waits.append(
                         {
                             "status": "waiting_refresh_after_failed_start",
-                            "wait_seconds": MIN_RECHECK_SECONDS,
+                            "wait_seconds": _uc_wait,
                             "city_id": pending["city_id"],
                             "building_id": pending["building_id"],
                             "error": str(step_exc),
@@ -1864,7 +1937,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 next_wait = min(
                     [int(reason.get("wait_seconds") or MIN_RECHECK_SECONDS) for reason in new_waits] or [MIN_RECHECK_SECONDS]
                 )
-                _ri_no_start: dict[str, Any] = {}
+                _ri_no_start: dict[str, Any] = {"unconfirmed_steps": _unconfirmed}
                 if _skipped_step_indices:
                     _ri_no_start["skipped_step_indices"] = _skipped_step_indices
                 if _blocked_step_indices:
@@ -1891,7 +1964,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
                 "info",
                 f"{len(started)} obra(s) iniciada(s) neste ciclo; proximo check em {next_wait}s",
             )
-            _ri_started: dict[str, Any] = {"last_builds_started_at": now_ts}
+            _ri_started: dict[str, Any] = {"last_builds_started_at": now_ts, "unconfirmed_steps": _unconfirmed}
             if _skipped_step_indices:
                 _ri_started["skipped_step_indices"] = _skipped_step_indices
             if _blocked_step_indices:
@@ -2105,7 +2178,12 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
         pending: dict[str, Any],
         current_level: int,
         position: int | None,
+        city: dict[str, Any] | None = None,
     ) -> dict[str, int] | None:
+        if current_level <= 0 and str(pending.get("mode") or "") == "new":
+            # N-220: a new building has no sidebar — its real cost is on the empty-slot screen
+            return self._get_live_build_costs(
+                client=client, city_id=city_id, pending=pending, position=_new_build_position(city, pending))
         if position is None or current_level <= 0:
             return None
         _ensure_city_context(client, city_id)
@@ -2135,6 +2213,49 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             return None
         costs = _parse_live_sidebar_costs(html)
         return costs if any(costs.values()) else None
+
+    def _get_live_build_costs(
+        self,
+        *,
+        client,
+        city_id: int,
+        pending: dict[str, Any],
+        position: int | None,
+    ) -> dict[str, int] | None:
+        """N-220: read (never build) the empty slot's screen and take the wanted building's cost from it."""
+        if position is None:
+            return None
+        _ensure_city_context(client, city_id)
+        try:
+            resp = client._request(
+                "GET",
+                client._server_url,
+                params={
+                    "view": "buildingGround",
+                    "cityId": str(city_id),
+                    "position": str(position),
+                    "backgroundView": "city",
+                    "currentCityId": str(city_id),
+                    "actionRequest": client._action_request,
+                    "ajax": "1",
+                },
+                headers={
+                    "Accept": "text/plain, */*; q=0.01",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
+        except Exception as exc:
+            logger.debug("Failed to load buildingGround for city %s pos %s: %s", city_id, position, exc)
+            return None
+        try:
+            for cmd in json.loads(resp.text):
+                if isinstance(cmd, (list, tuple)) and len(cmd) >= 2 and cmd[0] == "updateGlobalData" and isinstance(cmd[1], dict):
+                    if cmd[1].get("actionRequest"):
+                        client._action_request = str(cmd[1]["actionRequest"])
+                    break
+        except Exception:
+            pass
+        return _parse_build_ground_costs(_extract_ajax_html(resp.text), str(pending.get("building_id") or ""))
 
     def _get_live_step_button_state(
         self,
@@ -2194,6 +2315,7 @@ class ConstructionPlanRunner(_CityActionMixin, BaseRunner):
             pending=pending,
             current_level=current_level,
             position=position,
+            city=city,
         )
         button_state = self._get_live_step_button_state(
             client=client,
