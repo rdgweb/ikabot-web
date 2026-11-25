@@ -3,6 +3,7 @@ Account CRUD views.
 """
 
 import json
+from django.core.exceptions import ValidationError
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
@@ -126,9 +127,13 @@ class AccountCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         from apps.accounts import platform_agent
 
-        if platform_agent.is_waiting(form.cleaned_data.get("node")):
-            return self._with_platform_agent(form)
-        return super().form_valid(form)
+        try:
+            if platform_agent.is_waiting(form.cleaned_data.get("node")):
+                return self._with_platform_agent(form)
+            return super().form_valid(form)
+        except ValidationError as exc:
+            form.add_error(None, '; '.join(exc.messages))
+            return self.form_invalid(form)
 
     def _with_platform_agent(self, form):
         """N-207: registered on the platform's node: the platform's proxies and agent go on (without charge in the trial),
@@ -144,7 +149,10 @@ class AccountCreateView(LoginRequiredMixin, CreateView):
         billing = account_for(organization)
         outcome = set_proxy_addon(billing, self.object, True)
         if outcome.get("ok"):
-            outcome = set_agent_addon(billing, self.object, True)
+            try:
+                outcome = set_agent_addon(billing, self.object, True)
+            except RuntimeError as exc:
+                outcome = {'ok': False, 'reason': str(exc)}
         if outcome.get("ok"):
             messages.success(self.request, f"Conta {self.object.label} criada; o agente da plataforma está subindo.")
         else:
@@ -161,11 +169,27 @@ class AccountEditView(LoginRequiredMixin, UpdateView):
     def get_success_url(self):
         return reverse_lazy("accounts:account-detail", kwargs={"pk": self.object.pk})
 
+    def form_valid(self, form):
+        try:
+            return super().form_valid(form)
+        except ValidationError as exc:
+            form.add_error(None, '; '.join(exc.messages))
+            return self.form_invalid(form)
+
 
 class AccountDeleteView(LoginRequiredMixin, DeleteView):
     model = Account
     success_url = reverse_lazy("accounts:account-list")
     template_name = "accounts/account_confirm_delete.html"
+
+    def form_valid(self, form):
+        from django.contrib import messages
+        from django.shortcuts import redirect
+        try:
+            return super().form_valid(form)
+        except ValidationError as exc:
+            messages.error(self.request, '; '.join(exc.messages))
+            return redirect('accounts:account-detail', pk=self.object.pk)
 
 
 def _over_plan(organization, more: int):

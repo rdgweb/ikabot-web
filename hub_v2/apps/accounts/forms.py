@@ -134,7 +134,9 @@ class AccountCreateForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # N-207: a platform node runs one account: once it has one, it is not offered again
-        busy = Node.objects.filter(platform_managed=True, accounts__isnull=False).values_list("pk", flat=True)
+        busy = Node.objects.filter(platform_managed=True).filter(
+            models.Q(accounts__isnull=False) | models.Q(docker_host__isnull=False)
+        ).values_list("pk", flat=True)
         self.fields["node"].queryset = Node.objects.filter(active=True).exclude(pk__in=list(busy)).order_by("name")
         self.fields["node"].empty_label = "Escolha o nó"
         self.fields["node"].error_messages["required"] = "Escolha o nó que vai jogar por esta conta."
@@ -177,6 +179,14 @@ class AccountEditForm(forms.ModelForm):
             "email": forms.EmailInput(attrs={"class": "form-input"}),
             "notes": forms.Textarea(attrs={"class": "form-input", "rows": 2}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['node'].queryset = Node.objects.filter(active=True).filter(
+            models.Q(platform_managed=False) | models.Q(pk=self.instance.node_id))
+        if self.instance.platform_agent:
+            self.fields['node'].disabled = True
+            self.fields['node'].help_text = 'Desative o agente da plataforma antes de trocar o no.'
 
     def save(self, commit=True):
         instance = super().save(commit=False)

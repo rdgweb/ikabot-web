@@ -99,6 +99,11 @@ jobs:
           python hub_v2/manage.py test apps.users.tests_account apps.website.tests_signup --settings=config.settings.test --noinput
           TEST_MARIADB=1 python hub_v2/manage.py test apps.users.tests_account apps.website.tests_signup --settings=config.settings.test --noinput
 
+      - name: Test platform agent lifecycle and capacity
+        run: |
+          python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 --settings=config.settings.test --noinput
+
       - name: Test piracy conversion board and donation network recovery
         run: |
           python -m pip install -r agent_v2/requirements.txt

@@ -10,10 +10,16 @@ Signals for the accounts app.
 import json
 import logging
 
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(pre_delete, sender='accounts.Account')
+def retire_deleted_account_agent(sender, instance, **kwargs):
+    from .platform_agent import deleting_account
+    deleting_account(instance)
 
 
 @receiver(post_save, sender="accounts.Account")

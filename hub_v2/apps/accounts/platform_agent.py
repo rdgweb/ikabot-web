@@ -26,9 +26,14 @@ def host():
 
 
 def running_count() -> int:
-    from .models import Account
+    from django.db.models import Q
+    from .models import Node
 
-    return Account._base_manager.filter(platform_agent=True).count()
+    # Reserve capacity until removal is confirmed, including orphaned agents.
+    return Node._base_manager.filter(platform_managed=True, docker_host__isnull=False).filter(
+        Q(active=True) | Q(provision_requests__action='remove',
+                           provision_requests__status__in=['queued', 'running', 'failed'])
+    ).distinct().count()
 
 
 def slots_left() -> int:
@@ -109,10 +114,26 @@ def provision(account) -> None:
     the supervisor for the container."""
     from core.encryption import encrypt
 
-    from .models import AgentProvisionRequest, Node
+    from .models import Account, AgentProvisionRequest, DockerHost, Node
 
     machine = host()
+    if machine is None:
+        raise RuntimeError('O agente da plataforma ainda nao esta disponivel.')
     with transaction.atomic():
+        # One host lock serializes capacity reservations; the account lock makes retries idempotent.
+        DockerHost._base_manager.select_for_update().get(pk=machine.pk)
+        locked = Account._base_manager.select_for_update().get(pk=account.pk)
+        if locked.platform_agent:
+            validate_account_node(locked)
+            account.refresh_from_db()
+            return
+        if Account._base_manager.filter(organization_id=locked.organization_id,
+                                        email__iexact=locked.email, platform_agent=True).exclude(pk=locked.pk).exists():
+            raise RuntimeError('Este lobby ja possui um agente da plataforma nesta organizacao.')
+        reason = why_not(locked)
+        if reason:
+            raise RuntimeError(reason)
+        account.refresh_from_db()
         if is_waiting(account.node):
             node = account.node
             node.docker_host = machine
@@ -120,8 +141,13 @@ def provision(account) -> None:
             token = node.issue_agent_token()
             node.save(update_fields=["docker_host", "description", "agent_token_hash", "deploy_token", "updated_at"])
         else:
+            name = f'plataforma-{account.pk.hex[:8]}'
+            suffix = 2
+            while Node._base_manager.filter(organization_id=account.organization_id, name=name).exists():
+                name = f'plataforma-{account.pk.hex[:8]}-{suffix}'
+                suffix += 1
             node = Node._base_manager.create(
-                name=f"plataforma-{account.pk.hex[:8]}", organization_id=account.organization_id,
+                name=name, organization_id=account.organization_id,
                 transport=Node.TRANSPORT_HTTPS, platform_managed=True, docker_host=machine,
                 description=f"Agente da plataforma para {account.label}",
             )
@@ -135,6 +161,73 @@ def provision(account) -> None:
         account.save(update_fields=["previous_node", "node", "platform_agent_node", "platform_agent",
                                     "platform_agent_ends_at", "updated_at"])
     _point_node_to_proxy(account, node)
+
+
+def validate_account_node(account, *, lock=False):
+    """A platform node belongs to one account and its add-on must point to that same node."""
+    from django.core.exceptions import ValidationError
+    from django.db.models import Q
+    from .models import Account, Node
+
+    if account.platform_agent and (not account.platform_agent_node_id or account.node_id != account.platform_agent_node_id):
+        raise ValidationError({'node': 'O agente da plataforma deve coincidir com o no da conta. Desative o adicional antes de trocar o no.'})
+    if not account.node_id:
+        return
+    nodes = Node._base_manager
+    if lock:
+        nodes = nodes.select_for_update()
+    node = nodes.get(pk=account.node_id)
+    if not node.platform_managed:
+        return
+    if account.organization_id != node.organization_id:
+        raise ValidationError({'node': 'O agente pertence a outra organizacao.'})
+    if Account._base_manager.filter(Q(node=node) | Q(platform_agent_node=node)).exclude(pk=account.pk).exists():
+        raise ValidationError({'node': 'Este agente da plataforma ja pertence a outra conta.'})
+    if account._state.adding and node.docker_host_id and not account.platform_agent:
+        raise ValidationError({'node': 'Crie um novo no de plataforma para cadastrar esta conta.'})
+
+
+def retire_node(node, *, excluding_account=None):
+    """Queue an idempotent removal, retaining the node/history and capacity until confirmation."""
+    from django.core.exceptions import ValidationError
+    from django.db.models import Q
+    from apps.jobs.models import Job
+    from apps.proxy.models import ProxyProfile
+    from .models import Account, AgentProvisionRequest, Node
+
+    with transaction.atomic():
+        node = Node._base_manager.select_for_update().get(pk=node.pk)
+        if not node.platform_managed:
+            return
+        users = Account._base_manager.filter(Q(node=node) | Q(platform_agent_node=node))
+        if excluding_account is not None:
+            users = users.exclude(pk=excluding_account.pk)
+        if users.exists():
+            raise ValidationError('O agente ainda esta vinculado a outra conta; concilie os vinculos antes de remover.')
+        if Job._base_manager.filter(node=node).filter(
+            Q(status__in=['queued', 'running']) | Q(lease_expires_at__gt=timezone.now())
+        ).exists():
+            raise ValidationError('Aguarde os jobs e reservas de execucao deste agente terminarem antes de remover.')
+        AgentProvisionRequest._base_manager.filter(node_ref=node.pk, action='create', status='queued').update(
+            status='failed', message='Conta removida antes do provisionamento.', token_enc='', finished_at=timezone.now())
+        ProxyProfile._base_manager.filter(assigned_node=node).update(assigned_node=None)
+        node.active, node.proxy = False, ''
+        node.save(update_fields=['active', 'proxy', 'updated_at'])
+        if node.docker_host_id:
+            last = AgentProvisionRequest._base_manager.filter(node_ref=node.pk, action='remove').order_by('-created_at').first()
+            if last is None:
+                AgentProvisionRequest._base_manager.create(docker_host_id=node.docker_host_id, node=node, node_ref=node.pk, action='remove')
+            elif last.status == 'failed':
+                last.status, last.message = 'queued', ''
+                last.save(update_fields=['status', 'message', 'updated_at'])
+
+
+def deleting_account(account):
+    """All deletion paths (including queryset/admin deletion) retire this account's platform nodes."""
+    from .models import Node
+    ids = {account.node_id, account.platform_agent_node_id} - {None}
+    for node in Node._base_manager.filter(pk__in=ids, platform_managed=True).order_by('pk'):
+        retire_node(node, excluding_account=account)
 
 
 def _point_node_to_proxy(account, node) -> None:
@@ -160,18 +253,29 @@ def end(account) -> None:
     """Remove the container, move the account back and leave the platform node inactive."""
     from apps.proxy.models import ProxyProfile
 
-    from .models import AgentProvisionRequest
+    from .models import Account, AgentProvisionRequest
 
-    node = account.platform_agent_node
     with transaction.atomic():
+        Account._base_manager.select_for_update().get(pk=account.pk)
+        account.refresh_from_db()
+        if not account.platform_agent and not account.platform_agent_node_id:
+            return
+        node = account.platform_agent_node
         if node is not None:
+            from django.db.models import Q
+            if Account._base_manager.filter(Q(node=node) | Q(platform_agent_node=node)).exclude(pk=account.pk).exists():
+                raise RuntimeError('O agente ainda esta vinculado a outra conta. Concilie os vinculos antes de desativar.')
             ProxyProfile._base_manager.filter(assigned_node=node).update(assigned_node=None)
             node.active = False
             node.proxy = ""
             node.save(update_fields=["active", "proxy", "updated_at"])
             machine = node.docker_host or host()
             if machine is not None:
-                AgentProvisionRequest._base_manager.create(docker_host=machine, node=node, node_ref=node.pk, action="remove")
+                removal, _ = AgentProvisionRequest._base_manager.get_or_create(
+                    node_ref=node.pk, action='remove', defaults={'docker_host': machine, 'node': node})
+                if removal.status == 'failed':
+                    removal.status = 'queued'
+                    removal.save(update_fields=['status', 'updated_at'])
         previous = account.previous_node
         if previous is not None and previous.active:
             account.node = previous                        # without one, it stays on the switched-off platform node

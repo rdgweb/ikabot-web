@@ -278,6 +278,18 @@ class Account(UUIDTimestampModel):
     def __str__(self):
         return f"{self.label} ({self.email})"
 
+    def clean(self):
+        super().clean()
+        from .platform_agent import validate_account_node
+        validate_account_node(self)
+
+    def save(self, *args, **kwargs):
+        from django.db import transaction
+        from .platform_agent import validate_account_node
+        with transaction.atomic():
+            validate_account_node(self, lock=True)
+            return super().save(*args, **kwargs)
+
 
 class GameAccount(UUIDTimestampModel):
     """
