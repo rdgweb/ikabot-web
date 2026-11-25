@@ -54,8 +54,12 @@ class InviteAcceptView(View):
         if errors:
             return render(request, self.template_name, {"invite": invite, "errors": errors, "username": username})
 
-        user, organization = accept_invite(invite, username=username, password=password, ip=client_ip(request),
-                                           user_agent=request.META.get("HTTP_USER_AGENT", ""))
+        from django.db import IntegrityError
+        try:
+            user, organization = accept_invite(invite, username=username, password=password, ip=client_ip(request),
+                                               user_agent=request.META.get("HTTP_USER_AGENT", ""))
+        except (ValidationError, IntegrityError):
+            return render(request, self.template_name, {"invite": invite, "errors": ["Este convite não pode mais ser aceito. Confira se a conta já existe ou solicite outro convite."]}, status=400)
         record("invite.accepted", user=user, target=organization, target_label=organization.name,
                organization=organization, details={"termos": TERMS_VERSION})
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")

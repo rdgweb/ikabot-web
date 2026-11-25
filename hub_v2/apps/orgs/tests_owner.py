@@ -100,7 +100,7 @@ class OwnerAreaTests(TestCase):
     def test_my_account_name_password_and_tour(self):
         self.client.post("/conta/", {"action": "profile", "first_name": "Rodrigo", "email": "novo@example.com"})
         self.owner.refresh_from_db()
-        self.assertEqual((self.owner.first_name, self.owner.email), ("Rodrigo", "novo@example.com"))
+        self.assertEqual((self.owner.first_name, self.owner.email), ("Rodrigo", "dono@example.com"))  # Email changes now require separate confirmation.
         self.client.post("/conta/", {"action": "password", "old_password": "Senha-Antiga-2026!",
                                      "new_password1": "Senha-Nova-2026!", "new_password2": "Senha-Nova-2026!"})
         self.owner.refresh_from_db()

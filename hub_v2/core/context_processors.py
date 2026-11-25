@@ -6,6 +6,10 @@ from django.conf import settings
 def nav_context(request):
     """Provide sidebar navigation context filtered by user permissions."""
     user = getattr(request, "user", None)
+    from apps.users.models import UserProfile
+    from django.db.models import BooleanField, Case, Value, When
+    profile = UserProfile.objects.filter(user=user).defer("avatar").annotate(
+        has_avatar=Case(When(avatar__isnull=False, then=Value(True)), default=Value(False), output_field=BooleanField())).first() if user and user.is_authenticated else None
     if not hasattr(user, "_perm_is_admin"):
         user._perm_is_admin = _is_admin(user)
         user._perm_is_operator = _is_operator(user)
@@ -111,6 +115,8 @@ def nav_context(request):
         "user_is_admin": is_admin,
         "user_is_operator": is_operator,
         "user_is_staff": is_staff,
+        "personal_profile": profile,
+        "personal_display_name": (profile.display_name if profile else "") or getattr(user, "first_name", "") or getattr(user, "username", ""),
     }
 
 

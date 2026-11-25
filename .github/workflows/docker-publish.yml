@@ -94,6 +94,11 @@ jobs:
           TEST_MARIADB=1 python hub_v2/manage.py test apps.access_control.tests apps.users.tests_access_policy apps.orgs.tests_scope apps.orgs.tests_owner apps.accounts.tests_n106_keys apps.accounts.tests_n131 apps.billing.tests --settings=config.settings.test --noinput
           python agent_v2/tests/test_operation_policy.py
 
+      - name: Test personal profile, email verification and session revocation
+        run: |
+          python hub_v2/manage.py test apps.users.tests_account apps.website.tests_signup --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.users.tests_account apps.website.tests_signup --settings=config.settings.test --noinput
+
       - name: Set up Node for browser regression tests
         uses: actions/setup-node@v4
         with:

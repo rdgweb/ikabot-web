@@ -86,6 +86,8 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
 
 # Platform-wide for now (per-organization settings are stage 4).
 GLOBAL_MODELS = {
+    # Personal account data is authorized by user identity, never by organization or staff status.
+    "users.UserProfile", "users.UserSession", "users.EmailChallenge",
     # IAM spans platform and organization scopes; all entry points explicitly authorize and filter.
     "access_control.Role", "access_control.AccessMode", "access_control.Grant", "access_control.AccessEvent",
     "combat.SimulatorCalibration", "telegram.TelegramBotConfig", "telegram.TelegramIncomingCommand", "captcha.CaptchaConfig",

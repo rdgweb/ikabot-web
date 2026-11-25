@@ -281,8 +281,12 @@ class SignupView(View):
             cache.incr(key)
         except ValueError:
             cache.set(key, 1, timeout=3600)
-        user = register(email=form["email"][:254], username=form["username"], password=password,
-                        organization_name=form["organization"], ip=ip, user_agent=request.META.get("HTTP_USER_AGENT", ""))
+        from django.db import IntegrityError
+        try:
+            user = register(email=form["email"][:254], username=form["username"], password=password,
+                            organization_name=form["organization"], ip=ip, user_agent=request.META.get("HTTP_USER_AGENT", ""))
+        except (ValidationError, IntegrityError):
+            return render(request, "website/signup.html", _context(request, lang, "signup", t=t, errors=[t["error_email_used"]], form=form), status=400)
         link = f"{site_url(request)}/conta/confirmar/{signup_token(user, form['organization'], lang)}/"
         try:
             send_mail(t["mail_subject"], t["mail_body"].format(name=user.get_username(), link=link), None, [user.email])

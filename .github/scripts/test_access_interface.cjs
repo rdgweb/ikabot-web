@@ -44,6 +44,7 @@ test('Access pages render searches, roles, provenance and explicit confirmation'
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.hostname !== 'access.test') return route.abort();
+      if(url.pathname === '/conta/avatar/') return route.fulfill({contentType:'image/jpeg',body:Buffer.from(fixtures.avatar,'base64')});
       if (url.pathname.startsWith('/static/')) {
         const file=path.resolve(root,'hub_v2',url.pathname.slice(1));
         if (!file.startsWith(path.join(root,'hub_v2/static')+path.sep) || !fs.existsSync(file)) return route.fulfill({status:404,body:''});
@@ -52,17 +53,34 @@ test('Access pages render searches, roles, provenance and explicit confirmation'
       const name=url.searchParams.get('fixture');
       return route.fulfill(name && fixtures[name] ? {contentType:'text/html',body:fixtures[name].replace(' data-autostart','')} : {status:204,body:''});
     });
-    for (const name of ['people','roles','person','preview']) {
+    for (const name of ['people','roles','person','preview','account_profile','account_security','account_preferences']) {
       await page.goto('http://access.test/users/permissoes/?fixture='+name);
       assert.equal(await page.locator('a[href="/api/docs/"]').getAttribute('hx-boost'),'false');
       if(name==='roles')assert.ok(await page.getByText('Criar papel',{exact:true}).isVisible());
       if(name==='person')assert.ok(await page.getByText('Acesso efetivo · browser-person',{exact:true}).isVisible());
+      if(name==='account_profile')assert.ok(await page.getByRole('button',{name:'Salvar perfil',exact:true}).isVisible());
+      if(name==='account_security') {
+        assert.ok(await page.getByRole('heading',{name:'Sessões ativas',exact:true}).isVisible());
+        assert.ok(await page.getByRole('button',{name:'Encerrar todas as outras',exact:true}).isVisible());
+      }
+      if(name==='account_preferences')assert.ok(await page.getByRole('button',{name:'Salvar preferências',exact:true}).isVisible());
       if(name==='preview') {
         assert.ok(await page.getByRole('button',{name:'Confirmar alteração',exact:true}).isVisible());
         assert.ok(await page.locator('input[name="confirmation"]').inputValue());
         assert.ok(await page.getByText('browser-person',{exact:false}).first().isVisible());
       }
       assert.equal(await page.locator('body').evaluate(el=>el.scrollWidth > innerWidth),false,name);
+      if(name.startsWith('account_')) {
+        await page.setViewportSize({width:390,height:844});
+        await page.waitForFunction(()=>document.body.scrollWidth <= innerWidth,null,{timeout:3000});
+        assert.equal(await page.locator('body').evaluate(el=>el.scrollWidth > innerWidth),false,name+' mobile');
+        const menu = page.getByRole('button',{name:'Abrir menu de navegação',exact:true});
+        await menu.click();
+        assert.equal(await menu.getAttribute('aria-expanded'),'true');
+        await page.keyboard.press('Escape');
+        assert.equal(await menu.getAttribute('aria-expanded'),'false');
+        await page.setViewportSize({width:1440,height:1000});
+      }
     }
   } finally { await browser.close(); }
 });

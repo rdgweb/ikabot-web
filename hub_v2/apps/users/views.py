@@ -39,6 +39,13 @@ class UserCreateView(PrincipalOnly, LoginRequiredMixin, StaffRequiredMixin, Crea
     template_name = "users/user_create.html"
     success_url = reverse_lazy("users:list")
 
+    def form_valid(self, form):
+        try:
+            return super().form_valid(form)
+        except ValidationError as exc:
+            form.add_error("email", exc)
+            return self.form_invalid(form)
+
 
 class UserEditView(PrincipalOnly, LoginRequiredMixin, StaffRequiredMixin, UpdateView):
     model = User
@@ -56,7 +63,11 @@ class UserEditView(PrincipalOnly, LoginRequiredMixin, StaffRequiredMixin, Update
             except ValidationError as exc:
                 form.add_error("is_active", exc)
                 return self.form_invalid(form)
-        return super().form_valid(form)
+        try:
+            return super().form_valid(form)
+        except ValidationError as exc:
+            form.add_error("email", exc)
+            return self.form_invalid(form)
 
 
 class UserDeleteView(PrincipalOnly, LoginRequiredMixin, StaffRequiredMixin, DeleteView):

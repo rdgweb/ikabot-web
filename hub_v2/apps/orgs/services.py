@@ -113,10 +113,17 @@ def accept_invite(invite, *, username: str, password: str, ip=None, user_agent: 
     from django.db import transaction
     from django.utils import timezone
 
-    from .models import TermsAcceptance
+    from .models import Invite, TermsAcceptance
 
     User = get_user_model()
     with transaction.atomic():
+        from apps.users.account_services import email_lock, ensure_email_available, normalized_email
+        from django.core.exceptions import ValidationError
+        email_lock()
+        invite = Invite.objects.select_for_update().get(pk=invite.pk)
+        if invite.used_at is not None or invite.expires_at <= timezone.now():
+            raise ValidationError("Este convite já foi usado ou expirou.")
+        ensure_email_available(normalized_email(invite.email))
         user = User(username=username, email=invite.email)
         user.set_password(password)
         user._own_organization = True
@@ -175,10 +182,18 @@ def register(*, email: str, username: str, password: str, organization_name: str
 
     User = get_user_model()
     with transaction.atomic():
+        from apps.users.account_services import email_lock, ensure_email_available, normalized_email, profile_for
+        email_lock()
+        email = normalized_email(email)
+        ensure_email_available(email)
         user = User(username=username, email=email, is_active=False)
         user.set_password(password)
         user._own_organization = True
         user.save()
+        profile = profile_for(user)
+        profile.signup_organization = (organization_name or "")[:120]
+        profile.signup_pending = True
+        profile.save(update_fields=["signup_organization", "signup_pending", "updated_at"])
         TermsAcceptance.objects.create(user=user, version=TERMS_VERSION, ip=ip, user_agent=(user_agent or "")[:200])
     return user
 
@@ -186,13 +201,20 @@ def register(*, email: str, username: str, password: str, organization_name: str
 def signup_token(user, organization_name: str, lang: str) -> str:
     from django.core import signing
 
-    return signing.dumps({"u": user.pk, "o": (organization_name or "")[:120], "l": lang, "h": user.password[-12:]}, salt=SIGNUP_SALT)
+    from apps.users.account_services import profile_for
+    profile = profile_for(user)
+    if lang in ("pt", "en") and profile.signup_language != lang:
+        profile.signup_language = lang
+        profile.save(update_fields=["signup_language", "updated_at"])
+    return signing.dumps({"u": user.pk, "o": (organization_name or "")[:120], "l": lang,
+                          "h": user.password[-12:], "e": user.email.lower(), "g": profile.email_generation}, salt=SIGNUP_SALT)
 
 
 def confirm_signup(token: str):
     """(user, organization, lang) for a good link — once; None when expired, forged or used."""
     from django.contrib.auth import get_user_model
     from django.core import signing
+    from django.core.exceptions import ValidationError
     from django.db import transaction
 
     try:
@@ -201,12 +223,24 @@ def confirm_signup(token: str):
         return None
     User = get_user_model()
     with transaction.atomic():
+        from apps.users.account_services import email_lock, ensure_email_available, mark_verified, profile_for
+        email_lock()
         user = User.objects.select_for_update().filter(pk=data.get("u")).first()
         if user is None or user.is_active or user.password[-12:] != data.get("h"):
+            return None
+        profile = profile_for(user)
+        if not profile.signup_pending or user.memberships.exists():
+            return None
+        if user.email.lower() != data.get("e") or profile.email_generation != data.get("g"):
+            return None
+        try:
+            ensure_email_available(user.email, user)
+        except ValidationError:
             return None
         user.is_active = True
         user.save(update_fields=["is_active"])
         organization = own_organization(user, data.get("o") or "")
+        mark_verified(user)
     return user, organization, data.get("l") or "pt"
 
 

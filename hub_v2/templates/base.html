@@ -21,9 +21,10 @@
   <script src="{% static 'vendor/alpine.min.js' %}" defer></script>
   {% block extra_head %}{% endblock %}
 </head>
-<body x-data="{}"
+<body x-data="{}" class="{% if personal_profile.compact_tables %}ik-pref-compact{% endif %} {% if personal_profile.reduced_motion %}ik-pref-motion{% endif %}{% block body_class %}{% endblock %}"
       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
       hx-boost="true" hx-target="#page-content" hx-swap="innerHTML transition:true" hx-push-url="true">
+  <style>.ik-pref-compact .data-table td,.ik-pref-compact .data-table th{padding-top:.4rem;padding-bottom:.4rem}.ik-pref-motion *,.ik-pref-motion *::before,.ik-pref-motion *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}</style>
 
   <!-- Loading indicators (4 estilos — toggle via botão ⋆ no canto) -->
   {% include "components/loading_indicator.html" %}

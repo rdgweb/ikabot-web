@@ -50,7 +50,9 @@ if user is None:
     print(f'  Superuser created: {username}')
 else:
     changed = False
-    if email and user.email != email:
+    # Existing personal email changes survive container recreation. Environment email bootstraps
+    # a new administrator; resetting an existing address requires an explicit operator request.
+    if email and os.environ.get('ADMIN_RESET_EMAIL', 'false').lower() in ('true', '1', 'yes') and user.email != email:
         user.email = email
         changed = True
     if not user.is_staff or not user.is_superuser:

@@ -1,6 +1,7 @@
 {% extends "website/base.html" %}
 
 {% block content %}
+<p style="text-align:center;margin:1rem"><a href="{% url 'signup-resend' %}">{% if lang == 'pt' %}Já se cadastrou e não recebeu o e-mail? Reenviar confirmação{% else %}Already signed up? Resend confirmation{% endif %}</a></p>
 <div class="page-head">
   <div class="wrap narrow">
     <span class="pill"><i class="bi bi-stars"></i> {{ ui.beta_open }}</span>

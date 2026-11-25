@@ -44,10 +44,10 @@
   {# User #}
   <div class="w-full p-4 sidebar-user">
     <div class="flex items-center gap-3">
-      <i class="bi bi-person-circle text-xl flex-shrink-0" style="color: #8a7e66;"></i>
+      {% if personal_profile.has_avatar %}<img src="{% url 'account-avatar' %}?v={{ personal_profile.avatar_version }}" alt="Sua foto" width="32" height="32" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0">{% else %}<i class="bi bi-person-circle text-xl flex-shrink-0" style="color: #8a7e66;"></i>{% endif %}
       <div class="flex-1 min-w-0 sidebar-collapsible">
         <a href="/conta/" title="Minha conta" style="text-decoration: none;">
-          <p class="text-sm font-medium truncate" style="color: #c4b99a;">{{ user.first_name|default:user.username }}</p>
+          <p class="text-sm font-medium truncate" style="color: #c4b99a;">{{ personal_display_name }}</p>
           <p class="text-xs" style="color: #8a7e66;">Minha conta <i class="bi bi-gear"></i></p>
         </a>
       </div>

@@ -1,8 +1,7 @@
 """Minha organização and Minha conta (N-126): what the owner manages, and what each person sets for themselves."""
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import get_user_model, update_session_auth_hash
-from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -243,48 +242,6 @@ def _send_invite(request, organization, email: str, link: str) -> bool:
         return False
 
 
-class AccountView(LoginRequiredMixin, TemplateView):
-    """GET/POST /conta/ — the person's own name, e-mail, password and the tour."""
 
-    template_name = "orgs/account.html"
-
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        ctx.setdefault("password_form", PasswordChangeForm(self.request.user))
-        ctx["organization"] = getattr(self.request, "organization", None)
-        ctx["role_label"] = dict(Membership.ROLE_CHOICES).get(role_of(self.request.user, ctx["organization"]), "")
-        return ctx
-
-    def post(self, request):
-        from apps.audit.services import record
-        from apps.settings_app.tour import restart
-
-        user = request.user
-        action = request.POST.get("action")
-        if action == "profile":
-            name = (request.POST.get("first_name") or "").strip()[:150]
-            email = (request.POST.get("email") or "").strip().lower()
-            try:
-                validate_email(email)
-            except ValidationError:
-                messages.error(request, "Informe um e-mail válido.")
-                return redirect("account")
-            if get_user_model().objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
-                messages.error(request, "Este e-mail já é usado por outra conta.")
-                return redirect("account")
-            user.first_name, user.email = name, email
-            user.save(update_fields=["first_name", "email"])
-            record("user.updated", target=user, target_label=user.get_username())
-            messages.success(request, "Dados salvos.")
-        elif action == "password":
-            form = PasswordChangeForm(user, request.POST)
-            if not form.is_valid():
-                return self.render_to_response(self.get_context_data(password_form=form))
-            form.save()
-            update_session_auth_hash(request, form.user)
-            record("user.password", target=user, target_label=user.get_username())
-            messages.success(request, "Senha trocada.")
-        elif action == "tour":
-            restart(user)
-            return redirect("/")
-        return redirect("account")
+# Stable import for extensions that referenced the previous location.
+from apps.users.account_views import AccountView  # noqa: E402,F401
