@@ -51,6 +51,18 @@ class PersonalAccountTests(TestCase):
         self.assertEqual(profile_for(self.user).display_name,"Minha identidade")
         self.assertContains(self.client.get("/conta/"),"Minha identidade")
 
+    def test_admin_email_edit_with_blank_password_preserves_current_credentials(self):
+        from .forms import UserEditForm
+        form=UserEditForm({"username":self.user.username,"email":"admin-edit@example.com","password":"","is_active":"on"},instance=self.user)
+        self.assertTrue(form.is_valid(),form.errors)
+        # A password changed after the form loaded must also be preserved.
+        fresh=get_user_model().objects.get(pk=self.user.pk)
+        fresh.set_password("New-Current-Password-2026!");fresh.save()
+        form.save()
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("New-Current-Password-2026!"))
+        self.assertEqual(self.user.email,"admin-edit@example.com")
+
     def test_avatar_is_resized_stripped_and_private(self):
         source=io.BytesIO();metadata=PngImagePlugin.PngInfo();metadata.add_text("private","secret camera metadata")
         Image.new("RGB",(600,400),"red").save(source,"PNG",pnginfo=metadata)

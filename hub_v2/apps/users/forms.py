@@ -50,6 +50,10 @@ class UserEditForm(UniqueEmailMixin, forms.ModelForm):
         help_text="Deixe em branco para manter a senha atual.",
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_password = self.instance.password
+
     class Meta:
         model = User
         fields = ["username", "email", "first_name", "last_name", "password", "is_active"]
@@ -72,8 +76,13 @@ class UserEditForm(UniqueEmailMixin, forms.ModelForm):
         new_pw = self.cleaned_data.get("password")
         if new_pw:
             user.set_password(new_pw)
+        else:
+            user.password = self._original_password
         if commit:
             email_lock()
+            current = User.objects.select_for_update().get(pk=user.pk)
+            if not new_pw:
+                user.password = current.password
             if user.email:
                 ensure_email_available(user.email, user)
             user.save()
