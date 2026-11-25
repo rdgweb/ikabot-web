@@ -44,6 +44,8 @@ def nav_context(request):
                 {"name": "Subcontas", "url": "/organizacao/subcontas/", "icon": "bi-toggles"},
                 {"name": "Proxies e agente", "url": "/organizacao/proxies/", "icon": "bi-shield-lock"},
                 {"name": "Membros", "url": "/organizacao/membros/", "icon": "bi-people"},
+                {"name": "Papéis e acessos", "url": "/organizacao/acessos/", "icon": "bi-person-lock"},
+                {"name": "Trocar organização", "url": "/organizacao/selecionar/", "icon": "bi-buildings"},
                 {"name": "Telegram", "url": "/organizacao/telegram/", "icon": "bi-telegram"},
                 {"name": "Plano", "url": "/organizacao/plano/", "icon": "bi-credit-card", "perm": "billing"},
             ],
@@ -61,12 +63,12 @@ def nav_context(request):
                 {"name": "Captcha", "url": "/captcha/", "icon": "bi-robot", "perm": "staff"},
                 {"name": "Notas", "url": "/notes/", "icon": "bi-card-checklist", "perm": "staff"},
                 {"name": "Atualizações", "url": "/notes/atualizacoes/", "icon": "bi-journal-code", "perm": "staff"},
-                {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "owner"},
+                {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "access"},
                 {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "staff"},
                 {"name": "Manutenção", "url": "/settings/manutencao/", "icon": "bi-tools", "perm": "staff"},
                 {"name": "Uso por organização", "url": "/settings/uso/", "icon": "bi-pie-chart", "perm": "staff"},
                 {"name": "Usuários", "url": "/users/", "icon": "bi-people", "perm": "principal"},
-                {"name": "Permissões e acessos", "url": "/users/permissoes/", "icon": "bi-person-lock", "perm": "principal"},
+                {"name": "Permissões e acessos", "url": "/users/permissoes/", "icon": "bi-person-lock", "perm": "access"},
                 {"name": "Documentação da API", "url": "/api/docs/", "icon": "bi-braces", "perm": "staff"},
                 {"name": "Organizações", "url": "/sistema/organizacoes/", "icon": "bi-buildings", "perm": "staff"},
                 {"name": "Convites", "url": "/users/convites/", "icon": "bi-envelope-paper", "perm": "staff"},
@@ -75,11 +77,14 @@ def nav_context(request):
     ]
 
     filtered = []
+    from apps.access_control.models import AccessMode
+    organization = getattr(request, "organization", None)
+    has_custom_access = bool(organization and user.is_authenticated and AccessMode.objects.filter(user=user, scope_key=str(organization.pk)).exists())
     for section in all_sections:
         section_perm = section.get("perm")
         if section_perm == "admin" and not is_admin:
             continue
-        if section_perm == "operator" and not is_operator:
+        if section_perm == "operator" and not (is_operator or is_staff or has_custom_access):
             continue
 
         items = [
@@ -91,7 +96,13 @@ def nav_context(request):
             or (item["perm"] == "principal" and user.is_superuser and user.is_active)
             or (item["perm"] == "owner" and is_owner)
             or (item["perm"] == "billing" and _billing_open(is_staff))
+            or item["perm"] == "access"
         ]
+        from apps.access_control.catalog import required_permission
+        from apps.access_control.policy import allowed
+        items = [item for item in items if item["url"] == "/organizacao/selecionar/" or
+                 not required_permission(item["url"]) or
+                 allowed(user, required_permission(item["url"]), getattr(request, "organization", None))]
         if items:
             filtered.append({"label": section["label"], "items": items})
 

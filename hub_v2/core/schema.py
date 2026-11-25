@@ -14,5 +14,5 @@ class AgentTokenAuthenticationScheme(OpenApiAuthenticationExtension):
             "type": "apiKey",
             "in": "header",
             "name": "X-Agent-Token",
-            "description": "Static token used by deployed agent workers.",
+            "description": "Token individual do nó. Envie também X-Agent-Node-ID; a credencial não concede acesso a outros nós ou organizações.",
         }

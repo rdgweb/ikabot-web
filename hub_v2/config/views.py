@@ -40,7 +40,7 @@ class HtmxLogoutView(LogoutView):
 
 
 class ApiDocsView(TemplateView):
-    """Native route reference for platform administrators."""
+    """Dedicated locally hosted Scalar reference for authorized staff."""
 
     template_name = "docs/api_reference.html"
 
@@ -74,24 +74,5 @@ class AuthenticatedSchemaView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        from .api_catalog import agent_routes
-        import re
-        paths = {}
-        for group in agent_routes():
-            for route in group["routes"]:
-                host = route["authentication"] == "Token do host"
-                paths.setdefault(route["path"], {})[route["method"].lower()] = {
-                    "description": route["description"], "tags": [group["name"]],
-                    "security": [{"HostToken" if host else "AgentToken": []}],
-                    "parameters": [{"name": key,"in":"path","required":True,"schema":{"type":"integer"} if key == "pk" else {"type":"string","format":"uuid"}}
-                                   for key in re.findall(r"\{(\w+)\}",route["path"])] + [
-                        {"name":"X-Ikabot-Host-ID" if host else "X-Agent-Node-ID","in":"header","required":True,"schema":{"type":"string","format":"uuid"}}],
-                    "responses": {str(code):{"description":label} for code,label in (
-                        (200,"Operação recebida; formato depende da rota"),(400,"Dados inválidos"),
-                        (401,"Credencial inválida"),(403,"Operação sem autorização"),(404,"Recurso indisponível para esta credencial"))},
-                }
-        return Response({"openapi":"3.0.3","info":{"title":"API interna de agents", "version":settings.VERSION,
-            "description":"Catálogo das rotas registradas. Não define os corpos completos de entrada/saída; a validação é específica de cada endpoint."},
-            "paths": paths, "components":{"securitySchemes":{
-                "AgentToken":{"type":"apiKey","in":"header","name":"X-Agent-Token"},
-                "HostToken":{"type":"apiKey","in":"header","name":"X-Ikabot-Host-Token"}}}})
+        from .openapi import agent_schema
+        return Response(agent_schema())

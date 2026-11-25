@@ -8,6 +8,8 @@ class OrganizationScopeMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        from apps.access_control.policy import _cache
+        access_token = _cache.set({})
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated:
             request.organization = None
@@ -15,13 +17,14 @@ class OrganizationScopeMiddleware:
             # below guarantees it never outlives this request
             token = scope._current.set(None)
         else:
-            organization = scope.organization_for(user)
+            organization = scope.organization_for(user, request.session.get("active_organization"))
             request.organization = organization
             token = scope.activate(organization, deny=organization is None)
         try:
             return self.get_response(request)
         finally:
             scope.deactivate(token)
+            _cache.reset(access_token)
 
 
 # N-106: pages of the platform itself (internal notes, global settings and integrations, users,
@@ -46,7 +49,7 @@ class PlatformPagesMiddleware:
         path = request.path
         from core.access import platform_owner
         if (path.startswith("/django-admin/") or
-                (path.startswith("/users/") and not path.startswith("/users/convites/"))):
+                (path.startswith("/users/") and not path.startswith(("/users/convites/", "/users/permissoes/")))):
             if not platform_owner(getattr(request, "user", None)):
                 from django.http import Http404
                 raise Http404()

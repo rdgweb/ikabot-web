@@ -18,8 +18,8 @@ def membership_of(request):
 
 
 def can_change(request) -> bool:
-    membership = membership_of(request)
-    return bool(membership and membership.role in (Membership.OWNER, Membership.OPERATOR))
+    from apps.access_control.policy import allowed
+    return allowed(request.user, "organization.integrations.manage", request.organization)
 
 
 def bot_username() -> str:

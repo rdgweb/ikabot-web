@@ -63,7 +63,7 @@ class AccessPolicyTests(TestCase):
         self.client.force_login(self.root)
         self.client.post(path,{"action":"platform","user_id":self.owner.pk,"role":"platform"})
         self.owner.refresh_from_db()
-        self.assertTrue(self.owner.is_staff)
+        self.assertFalse(self.owner.is_staff)  # Unpreviewed legacy writes are rejected.
         self.client.post(path,{"action":"platform","user_id":self.root.pk,"role":"organization"})
         self.root.refresh_from_db()
         self.assertTrue(self.root.is_superuser and self.root.is_staff)
@@ -93,8 +93,9 @@ class AccessPolicyTests(TestCase):
             self.assertEqual(self.client.get("/api/schema/").status_code,404)
         self.client.force_login(self.staff)
         page = self.client.get("/api/docs/")
-        self.assertContains(page,"/api/agent/piracy/next/")
-        self.assertNotContains(page,"@scalar")
+        self.assertContains(page,"Scalar.createApiReference")
+        self.assertContains(page,"/static/vendor/scalar/1.83.0/standalone.js")
+        self.assertNotContains(page,"cdn.jsdelivr.net")
         schema = self.client.get("/api/schema/")
         self.assertEqual(schema.status_code,200)
 

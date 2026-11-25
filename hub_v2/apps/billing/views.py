@@ -62,9 +62,8 @@ def _org_tabs(request, tab: str) -> dict:
 
 
 def _is_owner(request) -> bool:
-    if request.user.is_superuser:
-        return True
-    return request.user.memberships.filter(organization=request.organization, role=Membership.OWNER).exists()
+    from apps.access_control.policy import allowed
+    return allowed(request.user, "organization.billing.manage", request.organization)
 
 
 class PlanView(LoginRequiredMixin, TemplateView):

@@ -13,6 +13,8 @@ from django.views.generic import TemplateView
 
 from .models import Invite, Membership
 from .services import create_member_invite, role_of
+from django.db import transaction
+from apps.access_control.policy import allowed
 
 
 class OrgPage(LoginRequiredMixin, TemplateView):
@@ -34,8 +36,8 @@ class OrgPage(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx.update({"organization": self.request.organization, "tab": self.tab, "role": self.role,
-                    "is_owner": self.role == Membership.OWNER,
-                    "can_run": self.role in (Membership.OWNER, Membership.OPERATOR)})
+                    "is_owner": allowed(self.request.user, "organization.organization.manage", self.request.organization),
+                    "can_run": allowed(self.request.user, "organization.accounts.manage", self.request.organization)})
         return ctx
 
 
@@ -84,7 +86,7 @@ class OverviewView(OrgPage):
     def post(self, request):
         from apps.audit.services import record
 
-        if self.role != Membership.OWNER:
+        if not allowed(request.user, "organization.organization.manage", request.organization):
             raise Http404()
         name = (request.POST.get("name") or "").strip()[:120]
         if name:
@@ -121,7 +123,7 @@ class SubaccountsView(OrgPage):
         from apps.audit.services import record
         from apps.billing.services import limit_message, room_for
 
-        if self.role not in (Membership.OWNER, Membership.OPERATOR):
+        if not allowed(request.user, "organization.accounts.manage", request.organization):
             raise Http404()
         world = GameAccount.objects.select_related("account").filter(pk=request.POST.get("world")).first()
         if world is None:
@@ -157,8 +159,11 @@ class MembersView(OrgPage):
         })
         return ctx
 
+    @transaction.atomic
     def post(self, request):
         from apps.audit.services import record
+        from apps.access_control.services import lock
+        lock()
 
         if self.role != Membership.OWNER:
             raise Http404()
@@ -210,9 +215,14 @@ class MembersView(OrgPage):
 
 def _last_owner(member, new_role: str) -> bool:
     """Would this change leave the organization without an owner?"""
-    if member.role != Membership.OWNER or new_role == Membership.OWNER:
+    from apps.access_control.services import _is_owner, _owner_exists
+    from apps.access_control.models import AccessMode
+    if AccessMode.objects.filter(user=member.user, scope_key=str(member.organization_id)).exists() and new_role:
+        # Legacy role controls must not misrepresent or override custom grants.
+        return True
+    if not _is_owner(member.user, member.organization) or new_role == Membership.OWNER:
         return False
-    return not Membership.objects.filter(organization=member.organization, role=Membership.OWNER).exclude(pk=member.pk).exists()
+    return not _owner_exists(member.organization, member.user)
 
 
 def _send_invite(request, organization, email: str, link: str) -> bool:

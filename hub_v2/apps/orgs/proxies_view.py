@@ -99,11 +99,13 @@ class ProxiesView(OrgPage):
         elif action == "remove":
             self._remove(request)
         elif action == "addon":
-            if self.role != Membership.OWNER:
+            from apps.access_control.policy import allowed
+            if not allowed(request.user, "organization.billing.manage", request.organization):
                 raise Http404()
             self._addon(request, record)
         elif action == "agent":
-            if self.role != Membership.OWNER:
+            from apps.access_control.policy import allowed
+            if not allowed(request.user, "organization.billing.manage", request.organization):
                 raise Http404()
             leave = self._agent(request, record)
             if leave is not None:

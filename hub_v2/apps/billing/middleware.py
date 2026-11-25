@@ -2,7 +2,7 @@
 from django.shortcuts import render
 
 ALWAYS = ("/organizacao/", "/logout/", "/login/", "/api/", "/settings/tour/", "/stats/", "/conta/")
-VIEWER_ALWAYS = ("/logout/", "/login/", "/api/", "/settings/tour/", "/stats/", "/conta/")
+VIEWER_ALWAYS = ("/logout/", "/login/", "/api/", "/settings/tour/", "/stats/", "/conta/", "/organizacao/selecionar/")
 
 
 class ReadOnlyOrganizationMiddleware:

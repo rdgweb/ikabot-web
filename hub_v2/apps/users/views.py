@@ -11,6 +11,8 @@ from core.mixins.views import StaffRequiredMixin
 from .forms import UserCreateForm, UserEditForm
 from core.access import platform_owner
 from django.http import Http404
+from django.core.exceptions import ValidationError
+from django.db import transaction
 
 
 class PrincipalOnly:
@@ -44,6 +46,18 @@ class UserEditView(PrincipalOnly, LoginRequiredMixin, StaffRequiredMixin, Update
     template_name = "users/user_edit.html"
     success_url = reverse_lazy("users:list")
 
+    @transaction.atomic
+    def form_valid(self, form):
+        if not form.cleaned_data.get("is_active"):
+            from apps.access_control.services import lock, protect_owner_identity
+            lock()
+            try:
+                protect_owner_identity(User.objects.get(pk=self.object.pk))
+            except ValidationError as exc:
+                form.add_error("is_active", exc)
+                return self.form_invalid(form)
+        return super().form_valid(form)
+
 
 class UserDeleteView(PrincipalOnly, LoginRequiredMixin, StaffRequiredMixin, DeleteView):
     model = User
@@ -52,3 +66,14 @@ class UserDeleteView(PrincipalOnly, LoginRequiredMixin, StaffRequiredMixin, Dele
 
     def get_queryset(self):
         return super().get_queryset().filter(is_superuser=False)
+
+    @transaction.atomic
+    def form_valid(self, form):
+        from apps.access_control.services import lock, protect_owner_identity
+        from django.http import HttpResponseForbidden
+        lock()
+        try:
+            protect_owner_identity(self.object)
+        except ValidationError as exc:
+            return HttpResponseForbidden(" ".join(exc.messages))
+        return super().form_valid(form)

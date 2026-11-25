@@ -24,6 +24,11 @@ def visible_events(user):
     """Superusers see the whole platform; an owner sees the organizations they own."""
     if user.is_superuser:
         return AuditEvent.objects.all()
+    from apps.orgs.scope import current_organization
+    from apps.access_control.policy import allowed
+    organization = current_organization()
+    if organization is not None:
+        return AuditEvent.objects.filter(organization=organization) if allowed(user, "organization.audit.view", organization) else AuditEvent.objects.none()
     owned = user.memberships.filter(role="owner").values_list("organization_id", flat=True)
     return AuditEvent.objects.filter(organization_id__in=list(owned))
 
@@ -33,7 +38,8 @@ class AuditListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
 
     def test_func(self):
         user = self.request.user
-        return user.is_superuser or user.memberships.filter(role="owner").exists()
+        from apps.access_control.policy import allowed
+        return allowed(user, "organization.audit.view", self.request.organization)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)

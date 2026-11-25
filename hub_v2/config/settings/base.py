@@ -91,6 +91,7 @@ INSTALLED_APPS = [
     "apps.audit",
     "apps.website",
     "apps.billing",
+    "apps.access_control",
 ]
 
 MIDDLEWARE = [
@@ -105,6 +106,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "apps.orgs.middleware.OrganizationScopeMiddleware",
     "apps.orgs.middleware.PlatformPagesMiddleware",
+    "apps.access_control.middleware.CapabilityMiddleware",
     "apps.audit.middleware.AuditMiddleware",
     "apps.billing.middleware.ReadOnlyOrganizationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",

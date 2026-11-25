@@ -5,7 +5,10 @@ def authenticated(user):
 
 
 def platform_admin(user):
-    return authenticated(user) and bool(user.is_staff or user.is_superuser)
+    if not authenticated(user):
+        return False
+    from apps.access_control.policy import permissions
+    return any(p.startswith("platform.") for p in permissions(user))
 
 
 def platform_owner(user):
@@ -16,15 +19,33 @@ def organization_role(user, organization=None):
     if not authenticated(user):
         return ""
     if organization is None:
+        from apps.orgs.scope import current_organization
+        organization = current_organization()
+    if organization is None:
         from apps.orgs.scope import organization_for
         organization = organization_for(user)
     if organization is None:
         return ""
+    from apps.access_control.models import AccessMode
+    if AccessMode.objects.filter(user=user, scope_key=str(organization.pk)).exists():
+        from apps.access_control.policy import permissions
+        from apps.access_control.catalog import OWNER
+        caps = permissions(user, organization)
+        # Compatibility for existing view guards. The route middleware checks the exact capability.
+        if OWNER <= caps:
+            return "owner"
+        return "operator" if any(p.startswith("organization.") and p.endswith(".manage") for p in caps) else "viewer"
     return user.memberships.filter(organization=organization).values_list("role", flat=True).first() or ""
 
 
 def operator(user, organization=None):
-    return platform_admin(user) or organization_role(user, organization) in ("owner", "operator")
+    if not authenticated(user):
+        return False
+    if organization is None:
+        from apps.orgs.scope import current_organization, organization_for
+        organization = current_organization() or organization_for(user)
+    from apps.access_control.policy import permissions
+    return any(p.startswith("organization.") and p.endswith(".manage") for p in permissions(user, organization))
 
 
 def owner(user, organization=None):

@@ -10,7 +10,6 @@ const read = file => fs.readFileSync(path.join(root, 'hub_v2', file), 'utf8');
 const fixtures = [
   { file: 'apps/notes/templates/notes/changelog.html', name: 'agent update', button: 'Atualizar pelo Hub', confirm: 'Atualizar agente' },
   { file: 'apps/settings_app/templates/settings_app/retention_run.html', name: 'retention', button: 'Confirmar e executar em lotes', confirm: 'Executar retenção', backup: true },
-  { file: 'apps/users/templates/users/access.html', name: 'platform access', button: 'Salvar', confirm: 'Alterar acesso' },
 ];
 const modal = read('templates/components/confirm_dialog.html')
   .split('<div x-data="confirmDialog()"')[1].replace(/{% endif %}/g, '');

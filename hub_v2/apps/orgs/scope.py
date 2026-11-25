@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from django.db import models
 from django.db.models import Q
+from django.core.exceptions import ValidationError
 
 # model -> (lookup up to the anchor, anchor, rows without the link are shared by everybody)
 SCOPES: dict[str, tuple[str, str, bool]] = {
@@ -85,6 +86,8 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
 
 # Platform-wide for now (per-organization settings are stage 4).
 GLOBAL_MODELS = {
+    # IAM spans platform and organization scopes; all entry points explicitly authorize and filter.
+    "access_control.Role", "access_control.AccessMode", "access_control.Grant", "access_control.AccessEvent",
     "combat.SimulatorCalibration", "telegram.TelegramBotConfig", "telegram.TelegramIncomingCommand", "captcha.CaptchaConfig",
     "website.InviteRequest",
     "billing.BillingAccount", "billing.BillingEvent",
@@ -210,7 +213,18 @@ class OrgScopedManager(models.Manager.from_queryset(OrgScopedQuerySet)):
         return scope.apply(queryset)
 
 
-def organization_for(user):
+def organization_for(user, preferred_id=None):
     """The organization a logged person works in (the first one; choosing comes with invitations)."""
-    membership = user.memberships.select_related("organization").order_by("created_at").first()
+    if preferred_id:
+        from .models import Organization
+        try:
+            candidates = Organization.objects.filter(pk=preferred_id, active=True)
+            if not user.is_superuser:
+                candidates = candidates.filter(memberships__user=user)
+            selected = candidates.first()
+            if selected:
+                return selected
+        except (ValueError, TypeError, ValidationError):
+            pass
+    membership = user.memberships.select_related("organization").filter(organization__active=True).order_by("created_at").first()
     return membership.organization if membership else None
