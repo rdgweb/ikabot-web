@@ -78,6 +78,19 @@ class PlatformAgentLifecycleTests(TestCase):
         platform_agent.retire_node(node)
         self.assertEqual(AgentProvisionRequest._base_manager.get(node=node, action='remove').status, 'queued')
 
+    def test_removal_keeps_capacity_after_organization_node_record_is_deleted(self):
+        node = self.start()
+        node_id = node.pk
+        self.account.delete()
+        node.delete()  # the organization cleanup deletes nodes before Docker answers
+        removal = AgentProvisionRequest._base_manager.get(node_ref=node_id, action='remove')
+        self.assertIsNone(removal.node_id)
+        self.assertEqual(platform_agent.running_count(), 1)
+        removal.status = 'running'
+        removal.save(update_fields=['status'])
+        platform_agent.finish_request(self.host, removal.pk, 'succeeded', 'removed')
+        self.assertEqual(platform_agent.running_count(), 0)
+
     def test_deletion_rolls_back_removal_request_on_database_rollback(self):
         node = self.start()
         pk = self.account.pk

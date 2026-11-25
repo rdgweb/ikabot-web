@@ -26,14 +26,15 @@ def host():
 
 
 def running_count() -> int:
-    from django.db.models import Q
-    from .models import Node
+    from .models import Node, AgentProvisionRequest
 
     # Reserve capacity until removal is confirmed, including orphaned agents.
-    return Node._base_manager.filter(platform_managed=True, docker_host__isnull=False).filter(
-        Q(active=True) | Q(provision_requests__action='remove',
-                           provision_requests__status__in=['queued', 'running', 'failed'])
-    ).distinct().count()
+    allocated = Node._base_manager.filter(platform_managed=True, docker_host__isnull=False,
+                                          active=True).order_by().values_list('pk', flat=True)
+    removing = AgentProvisionRequest._base_manager.filter(action='remove',
+        status__in=['queued', 'running', 'failed']).order_by().values_list('node_ref', flat=True)
+    # node_ref survives organization/node deletion; the nullable FK does not.
+    return allocated.union(removing).count()
 
 
 def slots_left() -> int:

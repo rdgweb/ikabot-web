@@ -101,8 +101,8 @@ jobs:
 
       - name: Test platform agent lifecycle and capacity
         run: |
-          python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 --settings=config.settings.test --noinput
-          TEST_MARIADB=1 python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 --settings=config.settings.test --noinput
+          python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 apps.orgs.tests_system --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 apps.orgs.tests_system --settings=config.settings.test --noinput
 
       - name: Test piracy conversion board and donation network recovery
         run: |
