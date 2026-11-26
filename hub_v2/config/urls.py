@@ -20,7 +20,7 @@ from apps.orgs.system_views import OrganizationsView, OrganizationView  # noqa: 
 from apps.website import views as site_views  # noqa: E402
 from apps.billing import views as billing_views  # noqa: E402
 from apps.website import password as site_password  # noqa: E402
-from apps.users.account_views import AccountView, AccountAvatarView, EmailConfirmView, SignupResendView  # noqa: E402
+from apps.users.account_views import AccountView, AccountAvatarView, EmailConfirmView, PrivacyToggleView, SignupResendView  # noqa: E402
 
 urlpatterns = [
     # Django admin
@@ -61,6 +61,7 @@ urlpatterns = [
     path("organizacao/plano/", include("apps.billing.urls")),
     path("conta/", AccountView.as_view(), name="account"),
     path("conta/avatar/", AccountAvatarView.as_view(), name="account-avatar"),
+    path("conta/privacidade/", PrivacyToggleView.as_view(), name="account-privacy"),
     path("conta/email/confirmar/<str:token>/", EmailConfirmView.as_view(), name="account-email-confirm"),
     path("conta/cadastro/reenviar/", SignupResendView.as_view(), name="signup-resend"),
     path("organizacao/", include("apps.orgs.urls")),

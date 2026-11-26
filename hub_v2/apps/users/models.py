@@ -17,6 +17,7 @@ class UserProfile(UUIDTimestampModel):
     signup_language = models.CharField(max_length=5, default="pt")
     compact_tables = models.BooleanField(default=False)
     reduced_motion = models.BooleanField(default=False)
+    hide_private = models.BooleanField(default=False)     # N-204: personal data blurred on screen (for prints, lives)
 
     def email_is_verified(self):
         return bool(self.email_verified_at and self.verified_email and self.verified_email.casefold() == self.user.email.strip().casefold())

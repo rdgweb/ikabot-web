@@ -6,7 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
@@ -182,3 +182,14 @@ class SignupResendView(View):
         from .account_services import resend_signup
         resend_signup(request, request.POST.get("email", ""))
         return render(request, "registration/signup_resend.html", {"sent": True, "email_ready": settings.EMAIL_READY})
+
+
+class PrivacyToggleView(LoginRequiredMixin, View):
+    """N-204: the eye in the top bar — blur (or show again) the personal data on every page, remembered per user.
+
+    Only hides on screen (prints, lives, someone looking); access and data stay as they are."""
+
+    def post(self, request):
+        hide = request.POST.get("hide") == "1"
+        UserProfile.objects.update_or_create(user=request.user, defaults={"hide_private": hide})
+        return JsonResponse({"hide": hide})

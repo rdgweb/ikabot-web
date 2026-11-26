@@ -27,6 +27,16 @@
       <i class="bi bi-plus-lg"></i>
       <span class="hidden sm:inline">Novo Job</span>
     </button>
+    {# N-204: the eye — blur the personal data on every page (prints, lives), remembered for this user #}
+    <button type="button" class="ik-bell-btn" x-data="{ hidden: document.body.classList.contains('ik-private') }"
+            :title="hidden ? 'Mostrar meus dados' : 'Ocultar meus dados (desfoque)'" :aria-label="hidden ? 'Mostrar meus dados' : 'Ocultar meus dados'"
+            :aria-pressed="hidden.toString()"
+            @click="hidden = !hidden; document.body.classList.toggle('ik-private', hidden);
+                    fetch('{% url 'account-privacy' %}', {method: 'POST', credentials: 'same-origin',
+                      headers: {'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded'},
+                      body: 'hide=' + (hidden ? '1' : '0')})">
+      <i class="bi" :class="hidden ? 'bi-eye-slash' : 'bi-eye'"></i>
+    </button>
     {# N-207: the bell — what happened lately for this organization #}
     <div class="ik-bell" x-data="{ open: false }" @click.outside="open = false" @keydown.escape.window="open = false">
       <button type="button" class="ik-bell-btn" title="Avisos" aria-label="Avisos" @click="open = !open"

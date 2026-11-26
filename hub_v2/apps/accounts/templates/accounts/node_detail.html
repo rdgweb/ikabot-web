@@ -52,7 +52,7 @@
     <div>
       <p class="text-sm font-semibold">Conflito de IP detectado</p>
       <p class="text-xs mt-0.5">
-        O IP <span class="font-mono font-bold">{{ node.external_ip }}</span> é compartilhado com:
+        O IP <span class="font-mono font-bold ik-pv">{{ node.external_ip }}</span> é compartilhado com:
         {% for cn in ip_conflict_nodes %}
           <a href="{% url 'accounts:node-detail' cn.pk %}" class="font-semibold underline">{{ cn.name }}</a>{% if not forloop.last %},{% endif %}
         {% endfor %}
@@ -98,7 +98,7 @@
     <div>
       <dt class="text-muted">IP Externo</dt>
       <dd class="mt-0.5 font-mono">
-        {{ node.external_ip|default:"—" }}
+        <span class="ik-pv">{{ node.external_ip|default:"—" }}</span>
         {% if node.ip_source %}
           <span class="text-muted text-xs ml-1">({{ node.ip_source }})</span>
         {% endif %}
@@ -170,7 +170,7 @@
   <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
     <div>
       <dt class="text-muted">Endereço</dt>
-      <dd class="mt-0.5 font-mono">{{ proxy_profile.address }}:{{ proxy_profile.port }}</dd>
+      <dd class="mt-0.5 font-mono ik-pv">{{ proxy_profile.address }}:{{ proxy_profile.port }}</dd>
     </div>
     <div>
       <dt class="text-muted">País</dt>
@@ -184,7 +184,7 @@
     </div>
     <div>
       <dt class="text-muted">IP testado</dt>
-      <dd class="mt-0.5 font-mono">{{ proxy_profile.last_test_ip|default:"—" }}</dd>
+      <dd class="mt-0.5 font-mono ik-pv">{{ proxy_profile.last_test_ip|default:"—" }}</dd>
     </div>
     <div>
       <dt class="text-muted">Latência</dt>
