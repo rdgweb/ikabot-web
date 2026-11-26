@@ -826,10 +826,16 @@ def conversion_plan(month, game_account, members, mine: dict, base_cap, now: dat
     It stops at the strength or at the crew its own raiders still beat, and converts nothing while it collects (what
     it holds then is its champion's)."""
     now = now or timezone.now()
-    row = next((r for r in crew_plan(month, now) if r["passer"].pk == game_account.pk), None)
+    rows = crew_plan(month, now)
+    row = next((r for r in rows if r["passer"].pk == game_account.pk), None)
     if row is None or not row["target"]:
         return None
     out = {"total": 0, "by": row["by"], "target": row["target"], "why": f"as origens (força {row['target']})"}
+    # still to be collected before its day (a passer of an earlier day takes it): it must stay beatable until then
+    earlier = [r for r in rows if r["day"] < row["day"] and any(o.pk == game_account.pk for o in r["sources"])]
+    if earlier:
+        out["why"] = f"espera ser recolhida por {earlier[-1]['passer'].name}"
+        return out
     crew, points = mine.get("crew"), int(mine.get("points") or 0)
     if crew is None or crew >= row["target"] or points <= 0:
         return out                                          # there: stop

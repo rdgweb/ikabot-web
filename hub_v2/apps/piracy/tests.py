@@ -858,3 +858,21 @@ class CrewHorizonTests(Base):
             plan = services.plan_for(other)
             self.assertIsNone(plan["convert_total"])
             self.assertEqual(plan["share_percent"], month.share_percent)
+
+
+class WaitToBeCollectedTests(Base):
+    """N-263: an account still to be collected by an earlier passer does not convert for its own passer day yet."""
+
+    def test_no_conversion_while_still_to_be_collected(self):
+        month = self.plan()
+        rows = [{"day": 0, "passer": self.accounts[7], "sources": [self.accounts[1]], "target": 2000},
+                {"day": 1, "passer": self.accounts[1], "sources": [], "target": 3000, "convert": 5000,
+                 "by": timezone.now() + timedelta(days=1), "now": 1000, "cap": 9000}]
+        with patch.object(services, "crew_plan", return_value=rows):
+            conv = services.conversion_plan(month, self.accounts[1], [], {"crew": 1000, "points": 20000}, None)
+        self.assertEqual(conv["total"], 0)
+        self.assertIn("espera ser recolhida", conv["why"])
+        rows[0]["sources"] = []
+        with patch.object(services, "crew_plan", return_value=rows):
+            conv = services.conversion_plan(month, self.accounts[1], [], {"crew": 1000, "points": 20000}, None)
+        self.assertEqual(conv["total"], 5000)
