@@ -66,6 +66,17 @@ class KpiHistoryTests(TestCase):
         series = build_history_map([str(self.accounts[0].pk)], "24h", now=self.now)[str(self.accounts[0].pk)]
         self.assertEqual({point["gold"] for point in series}, {50})
 
+    def test_points_before_the_first_reading_are_marked(self):
+        # N-242: a new account's 24 h shows the time it really has ("5h ▲"), not a 24 h comparison
+        self._snap(self.accounts[0], 5, 50)
+        self._snap(self.accounts[1], 30, 60)
+        data = build_history_map([str(a.pk) for a in self.accounts[:2]], "24h", now=self.now)
+        new = data[str(self.accounts[0].pk)]
+        self.assertTrue(new[0].get("before_first"))
+        self.assertFalse(new[-1].get("before_first"))
+        self.assertEqual(sum(1 for point in new if not point.get("before_first")), 6)    # the last 5 hours + now
+        self.assertFalse(any(point.get("before_first") for point in data[str(self.accounts[1].pk)]))
+
     def test_an_account_without_history_is_left_out_and_the_metrics_are_the_panel_ones(self):
         self._snap(self.accounts[0], 1, 70, income=1000, upkeep=-300, scientists_upkeep=-100)
         data = build_history_map([str(a.pk) for a in self.accounts], "24h", now=self.now)

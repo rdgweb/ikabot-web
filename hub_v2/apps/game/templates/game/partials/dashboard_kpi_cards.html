@@ -9,7 +9,7 @@
     <div style="min-width: 0;">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Ouro</p>
       <p class="text-base font-bold" style="color: var(--ik-ink);" x-text="fmt(kpi.gold)">{{ kpi.gold|intcomma }}</p>
-      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('gold').color" x-text="kpiTrend('gold').text"></p>
+      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('gold').color" :title="kpiTrend('gold').title" x-text="kpiTrend('gold').text"></p>
     </div>
   </div>
   <div class="card !p-3 cursor-pointer transition-all hover:shadow-md" @click="kpiModal='income'" title="Abrir detalhes de Renda/h"
@@ -20,7 +20,7 @@
     <div style="min-width: 0;">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Renda/h</p>
       <p class="text-base font-bold" :style="'color:' + (kpi.income >= 0 ? '#2d7a2d' : '#b3402f')" x-text="(kpi.income > 0 ? '+' : '') + fmt(kpi.income)">{{ kpi.income|intcomma }}</p>
-      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('income').color" x-text="kpiTrend('income').text"></p>
+      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('income').color" :title="kpiTrend('income').title" x-text="kpiTrend('income').text"></p>
     </div>
   </div>
   <div class="card !p-3 cursor-pointer transition-all hover:shadow-md" @click="kpiModal='cities'" title="Abrir detalhes de Cidades"
@@ -31,7 +31,7 @@
     <div style="min-width: 0;">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Cidades</p>
       <p class="text-base font-bold" style="color: var(--ik-ink);" x-text="kpi.cities">{{ kpi.cities }}</p>
-      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('cities').color" x-text="kpiTrend('cities').text"></p>
+      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('cities').color" :title="kpiTrend('cities').title" x-text="kpiTrend('cities').text"></p>
     </div>
   </div>
   <div class="card !p-3 cursor-pointer transition-all hover:shadow-md" @click="kpiModal='resources'" title="Abrir detalhes de Recursos"
@@ -42,7 +42,7 @@
     <div style="min-width: 0;">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Recursos</p>
       <p class="text-base font-bold" style="color: var(--ik-ink);" x-text="fmt(kpi.resources)">{{ kpi.resources|intcomma }}</p>
-      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('resources').color" x-text="kpiTrend('resources').text"></p>
+      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('resources').color" :title="kpiTrend('resources').title" x-text="kpiTrend('resources').text"></p>
     </div>
   </div>
   <div class="card !p-3 cursor-pointer transition-all hover:shadow-md" @click="kpiModal='troops'" title="Abrir detalhes de Tropas"
@@ -53,7 +53,7 @@
     <div style="min-width: 0;">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Tropas</p>
       <p class="text-base font-bold" style="color: var(--ik-ink);" x-text="fmt(kpi.troops)">{{ kpi.troops|intcomma }}</p>
-      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('troops').color" x-text="kpiTrend('troops').text"></p>
+      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('troops').color" :title="kpiTrend('troops').title" x-text="kpiTrend('troops').text"></p>
     </div>
   </div>
   <div class="card !p-3 cursor-pointer transition-all hover:shadow-md" @click="kpiModal='ships'" title="Abrir detalhes de Navios"
@@ -64,7 +64,7 @@
     <div style="min-width: 0;">
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Navios</p>
       <p class="text-base font-bold" style="color: var(--ik-ink);" x-text="fmt(kpi.ships)">{{ kpi.ships|intcomma }}</p>
-      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('ships').color" x-text="kpiTrend('ships').text"></p>
+      <p :style="'font-size: 10px; font-weight: 600; line-height: 1.2; min-height: 12px; color:' + kpiTrend('ships').color" :title="kpiTrend('ships').title" x-text="kpiTrend('ships').text"></p>
     </div>
   </div>
 </div>

@@ -158,21 +158,31 @@ def build_history_map(game_account_ids: list, period: str = DEFAULT_PERIOD, now=
             continue
         times = [mark[0] for mark in marks]
         chosen = []
+        before_first = []
         for point in points:
             index = bisect_right(times, point) - 1
             # before the account's first snapshot: its first known value, so the sum does not step
             chosen.append(marks[max(index, 0)][1])
+            before_first.append(index < 0)
         rows = AccountSnapshotHistory.objects.only("base_snapshot", "cities", "military").in_bulk(set(chosen))
         rows.update(AccountHistoryMetric.objects.in_bulk(set(chosen)))
         cache: dict[int, dict] = {}
         bucket = []
-        for point, row_id in zip(points, chosen):
+        early = []
+        for point, row_id, is_early in zip(points, chosen, before_first):
             row = rows.get(row_id)
             if row is None:
                 continue
             if row_id not in cache:
                 cache[row_id] = _metrics(row)
             bucket.append({"captured_at": point.isoformat(), **cache[row_id]})
+            early.append(is_early)
         if bucket:
-            grouped[str(game_account_id)] = repair_partial_readings(bucket)
+            series = repair_partial_readings(bucket)
+            # N-242: points before the account existed in the history copy its first value; marked, so a variation
+            # is told over the time really covered ("6h ▲") and not as 24 h
+            for position, is_early in enumerate(early):
+                if is_early:
+                    series[position] = {**series[position], "before_first": True}
+            grouped[str(game_account_id)] = series
     return grouped
