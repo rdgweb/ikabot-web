@@ -200,7 +200,7 @@ CREW_BONUS_FULL = 7000       # points that give the bonus (Rodrigo; measured: al
 ROTATE_DAYS = 1              # N-263: the roles follow the day (see flow) — kept for the old plans' field
 TURN_HOUR = 14               # N-263: the plan's day turns at this hour of the GAME's clock (2 h before 16 h there)
 DIRECT_POINTS = 20000        # N-263: a champion takes an origin directly only from this many points
-SHARE_JITTER_DOWN, SHARE_JITTER_UP = 2, 1   # N-255: an origin's share is drawn this much below/above the plan's (3% -> 1-4%)
+SHARE_JITTER_DOWN, SHARE_JITTER_UP = 2, 0   # N-263: an origin's share is drawn this much below/above the plan's (3% -> 1-3%, as agreed)
 BALANCE_SHARE = 0.25         # N-217: a champion this far ahead of the other (share of its own take, at least
                              # min_points) leaves a target both can take to the other one
 ROUTE_HOURS = 6              # a raid decided and not sent in this time is dropped (the next free ship gets a new one)

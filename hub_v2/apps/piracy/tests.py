@@ -533,7 +533,7 @@ class JobCardTests(Base):
         self.assertEqual(JobListView._piracy_plan(self.jobs[champion.pk])["text"], "converte tudo e junta os pontos")
         shown = JobListView._piracy_plan(self.jobs[holder.pk])
         self.assertEqual(shown["role"], roles[holder.pk])
-        self.assertTrue(shown["text"].startswith(f"converte {month.share_percent - 2}-{month.share_percent + 1}% a cada {month.share_every_hours}h"))
+        self.assertTrue(shown["text"].startswith(f"converte {month.share_percent - services.SHARE_JITTER_DOWN}-{month.share_percent + services.SHARE_JITTER_UP}% a cada {month.share_every_hours}h"))
         self.assertFalse(PiracyRoute.objects.exists())                  # reading the card draws nothing
         services.close_month(month)
         self.assertIsNone(JobListView._piracy_plan(self.jobs[holder.pk]))
