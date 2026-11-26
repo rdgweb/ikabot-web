@@ -625,7 +625,8 @@ class ConvertToWinTests(Base):
     """N-254: a passer that does not beat an origin yet gets the raid with the points to convert first; the hub decides
     on the strength the agent has just read."""
 
-    def test_the_passer_converts_what_is_missing_then_raids(self):
+    def test_the_passer_raids_only_who_it_beats_and_converts_in_the_morning(self):
+        # N-263: the conversion is the crew plan's (in the morning of its day); at the raid it takes only who it beats
         month = self.plan()
         window = patch.object(services, "collect_from", return_value=timezone.now() - timedelta(minutes=1))
         window.start()
@@ -638,14 +639,10 @@ class ConvertToWinTests(Base):
         self.set_strength(origin, points=15000, crew=1600)
         self.set_strength(passer, points=0, crew=0)                          # what the job saved last time (old)
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}&crew=1500&points=20000")
+        self.assertIsNone(data["route"])                                     # 1.500 does not beat 1.600 yet
         need = int(1600 * services.ratio_for(month.min_win_percent)) + 1
-        self.assertEqual(data["route"]["target_game_account_id"], str(origin.pk))
-        self.assertEqual(data["route"]["convert_points"], services.convert_for(100, 20000, need, None))
-        self.assertGreater(data["route"]["convert_points"], 0)
-        # the conversion came in: nothing more to convert, the same raid goes out
         again = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}&crew={need + 10}&points=15000")
-        self.assertEqual((again["route"]["route_id"], again["route"]["convert_points"]), (data["route"]["route_id"], 0))
-
+        self.assertEqual((again["route"]["target_game_account_id"], again["route"]["convert_points"]), (str(origin.pk), 0))
 
 
 class MonthRollTests(Base):

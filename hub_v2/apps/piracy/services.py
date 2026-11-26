@@ -900,8 +900,8 @@ def direct_from(month, origin, members, now: datetime | None = None) -> int:
 
 def collectable(month, passer, members, now: datetime | None = None, base_cap=None, mine: dict | None = None) -> list:
     """N-263: the origins the passer takes this day — another lobby, the pair free, nobody else on them, the points
-    to take, a win (converting what is missing) — leaving to the champions the ones over direct_points they take
-    directly. [(account, its strength, points to convert)], the most points for the least conversion first."""
+    to take, a win with the strength it has — leaving to the champions the ones over direct_points they take
+    directly. [(account, its strength, 0)], the most points first."""
     now = now or timezone.now()
     taken = _taken(month)
     mine = mine or strength(passer)
@@ -917,9 +917,10 @@ def collectable(month, passer, members, now: datetime | None = None, base_cap=No
             continue
         if points >= (month.direct_points or 0) and any(champion_may_take(month, c, ga, now, theirs) for c in champions):
             continue
-        convert = _convert_to_win(month, mine, theirs, base_cap)
-        if convert is not None:
-            out.append((ga, theirs, convert))
+        # N-263: only the ones it already beats — its conversion is the crew plan's, in the morning of its day (a
+        # conversion made at the raid takes hours and would hold the points past the delivery)
+        if _convert_to_win(month, mine, theirs, base_cap) == 0:
+            out.append((ga, theirs, 0))
     return sorted(out, key=lambda item: (-((item[1]["points"] or 0) - item[2]), item[2]))
 
 
