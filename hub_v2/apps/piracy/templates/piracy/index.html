@@ -189,6 +189,22 @@
   </section>
 </div>
 
+{% if chain.crew_plan %}
+<section class="pp-card pp-sec" style="margin-top: .9rem; overflow-x: auto;">
+  <h2>Plano de tripulação</h2>
+  <table class="pp-mx" style="min-width: 640px; table-layout: auto;">
+    <tr><th style="text-align: left;">Dia</th><th style="text-align: left;">Passagem → campeã</th><th>Força agora</th><th>Meta</th><th>Teto</th><th style="text-align: left;">Recolhe</th><th>Ação</th></tr>
+    {% for r in chain.crew_plan %}
+    <tr><td class="who">{% if r.day == 0 %}hoje{% elif r.day == 1 %}amanhã{% else %}{{ r.date|date:"d/m" }}{% endif %}</td>
+      <td class="who">{{ r.passer.name }} → {{ r.champion.name }}</td>
+      <td>{{ r.now|default_if_none:"?"|intcomma }}</td><td>{{ r.target|default_if_none:"—"|intcomma }}</td><td>{{ r.cap|default_if_none:"—"|intcomma }}</td>
+      <td class="who" style="font-weight: 400;">{% for o in r.sources %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if r.left_out %}<small>acima do teto: {% for o in r.left_out %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</small>{% endif %}</td>
+      <td class="{% if r.convert is None %}lock{% elif r.convert %}wait{% else %}ok{% endif %}">{% if not r.target %}—{% elif r.convert is None %}não alcança{% elif r.convert %}converte {{ r.convert|intcomma }}{% else %}pronta{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
 {% if chain.matrix.rows %}
 <section class="pp-card pp-sec" style="margin-top: .9rem; overflow-x: auto;">
   <h2>Quem rouba quem hoje</h2>

@@ -738,12 +738,14 @@ def plan_for(game_account, now: datetime | None = None, fresh: dict | None = Non
                               {k: v["points"] for k, v in read.items() if v["points"] is not None}).get(game_account.pk) or {}
         out.update(crew_cap=mine_budget.get("cap"), crew_floor=None, base_cap=mine_budget.get("cap_base"))
         if role == PiracyMember.PASSER:
-            # N-255: the passer converts AHEAD, at its turn, the least that beats the origin it takes from first (the
-            # most points for the least conversion) — so the raid goes out as soon as the origin has the points
-            best = _best_target(month, game_account, read.get(game_account.pk) or {}, now_members, member.group,
-                                out["base_cap"], now)
-            if best:
-                out.update(preconvert_points=best["convert"], preconvert_target=best["ga"].name)
+            # N-263: the crew plan — on its day, as early as it can, the passer converts the least that makes its
+            # strength beat every origin of its champion's lobby it collects (a conversion counts only when over)
+            champion_pk = flow.champion_of(month, game_account, now)
+            champion = next((m.game_account for m in now_members if str(m.game_account_id) == champion_pk), None)
+            if champion is not None:
+                need = passer_need(month, champion, game_account, now_members, fresh)
+                if need["convert"]:
+                    out.update(preconvert_points=need["convert"], preconvert_target=f"as origens (força {need['target']})")
         # in the final phase of the ranking (the points count for the position at the turn) nobody converts
         if _final_phase(game_account):
             out.update(share_percent=0, crew_floor=None, final=True, preconvert_points=0)
@@ -762,6 +764,62 @@ def _convert_to_win(month, mine: dict, theirs: dict, base_cap) -> int | None:
         return None
     need = int(theirs["crew"] * ratio_for(month.min_win_percent)) + 1
     return convert_for(mine["crew"] - crew_bonus(mine["points"]), int(mine["points"]), need, base_cap)
+
+
+def passer_need(month, champion, passer, members, fresh: dict | None = None) -> dict:
+    """N-263: the crew plan of one passer of the day — the strength it needs at its raids to beat (with the month's
+    chance) every origin of its champion's lobby that day (the ones the champion can never take directly), each
+    holding min_points or more then (the bonus); never above what its champion still beats while it carries the
+    points (cap). {"target", "now", "convert" (points to convert now; None: its points do not reach it), "sources",
+    "left_out" (origins over the cap: they wait for another way)}."""
+    ratio = ratio_for(month.min_win_percent)
+    mine = {**strength(passer), **(fresh or {})}
+    champ = strength(champion)["crew"]
+    cap = int(champ / ratio) if champ else None             # the strength it may have when its champion raids it
+    needs = []
+    for m in members:
+        o = m.game_account
+        if m.role != PiracyMember.ORIGIN or o.account_id != champion.account_id or o.account_id == passer.account_id:
+            continue
+        theirs = strength(o)
+        if theirs["crew"] is None:
+            continue
+        needs.append((int(at_raid(month, theirs["crew"], theirs["points"]) * ratio) + 1, o))
+    within = [(need, o) for need, o in needs if cap is None or need <= cap]
+    target = max((need for need, _o in within), default=None)
+    out = {"target": target, "now": mine.get("crew"), "convert": 0, "cap": cap,
+           "sources": [o for _n, o in sorted(within, key=lambda item: item[0])],
+           "left_out": [o for need, o in needs if cap is not None and need > cap]}
+    if target and mine.get("crew") is not None and mine["crew"] < target:
+        points = int(mine.get("points") or 0)
+        base = mine["crew"] - crew_bonus(points)
+        # it carries the collection when its champion raids it: the whole bonus counts on top of the base then
+        cap_base = cap - CREW_BONUS_MAX if cap is not None else None
+        out["convert"] = convert_for(base, points, target, cap_base)
+    return out
+
+
+def crew_plan(month, now: datetime | None = None) -> list[dict]:
+    """N-263: the crew plan of the rest of the block — for each day and champion, its passer, the strength the passer
+    needs on that day, what it has and what it converts (it converts on its own day, as early as it can: a conversion
+    only counts when it is over)."""
+    now = now or timezone.now()
+    number, today_index = flow._block(month, now)
+    start = flow.day_start(month, now)
+    by_pk = {str(m.game_account_id): m.game_account for m in month.members.select_related("game_account__account")}
+    rows = []
+    for index, day in enumerate(flow.agenda(month, now)):
+        if index < today_index:
+            continue
+        at = start + timedelta(days=index - today_index, hours=1)
+        members = flow.members_today(month, at)
+        for champion_pk, passer_pk in day.items():
+            champion, passer = by_pk.get(champion_pk), by_pk.get(passer_pk)
+            if champion is None or passer is None:
+                continue
+            need = passer_need(month, champion, passer, members)
+            rows.append({"day": index - today_index, "date": at, "champion": champion, "passer": passer, **need})
+    return rows
 
 
 def turn_end(month, now: datetime | None = None):
@@ -980,30 +1038,6 @@ def pair_release(month, raider, target, now: datetime | None = None):
     last = (PiracyRoute._base_manager.filter(raider=raider, target=target, created_at__gte=now - timedelta(days=month.pair_days or PAIR_DAYS))
             .exclude(status=PiracyRoute.SKIPPED).order_by("-created_at").first())
     return last.created_at + timedelta(days=month.pair_days or PAIR_DAYS) if last else None
-
-
-def _best_target(month, passer, mine: dict, members, group, base_cap, now) -> dict | None:
-    """N-255: the origin a passer takes from first — of another lobby, free of the pair rule, the most points for the
-    least conversion — with the points to convert to beat it (0: it already does); None when it beats none."""
-    if mine.get("crew") is None or mine.get("points") is None:
-        return None
-    best = None
-    for m in members:
-        if m.group != group or m.role != PiracyMember.ORIGIN or m.game_account.account_id == passer.account_id:
-            continue
-        if pair_release(month, passer, m.game_account, now):
-            continue
-        theirs = strength(m.game_account)
-        if theirs.get("crew") is None:
-            continue
-        target = {"crew": at_raid(month, theirs["crew"], theirs.get("points")), "points": theirs.get("points")}
-        convert = _convert_to_win(month, mine, target, base_cap)
-        if convert is None:
-            continue
-        gain = max(int(theirs.get("points") or 0), month.min_points) - convert
-        if best is None or gain > best["gain"]:
-            best = {"ga": m.game_account, "convert": convert, "gain": gain}
-    return best
 
 
 def champion_takes(month) -> dict:
@@ -1235,9 +1269,8 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
     takes = champion_takes(month)
     emptied = _emptied(month)
     scale = max(1, month.min_points * 2)
-    limits = budgets(month, {k: v.get("crew") for k, v in rows_by_ga.items()},
-                     {k: v.get("capture_points") for k, v in rows_by_ga.items() if v.get("capture_points") is not None})
     day = day_agenda(month, members, now)
+    crew = crew_plan(month, now)
     deliver_to = {row["passer"].pk: row for row in day if row.get("passer") is not None}
 
     def read(ga):
@@ -1279,16 +1312,17 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
             elif route_out:
                 out.update(tone="warn" if route_out.status == PiracyRoute.SENT else "ok",
                            text=("a caminho de " if route_out.status == PiracyRoute.SENT else "rouba ") + route_out.target_name + lands(route_out))
-            elif plan and not plan.get("collecting"):
-                out.update(tone="mut", text=f"recolhe às {plan['collect']} · entrega {plan['deliver']} para {plan['champion'].name}")
             else:
-                best = _best_target(month, ga, r, members, m.group, (limits.get(ga.pk) or {}).get("cap_base"), now)
-                if best is None:
-                    out.update(tone="bad", text="não alcança as origens")
-                elif best["convert"]:
-                    out.update(tone="warn", text=f"converte {best['convert']:,} para vencer {best['ga'].name}".replace(",", "."))
+                need = next((row for row in crew if row["day"] == 0 and row["passer"].pk == ga.pk), None)
+                when = (f"recolhe às {plan['collect']} · " if plan and not plan.get("collecting") else "")
+                if need is None or not need["target"]:
+                    out.update(tone="mut", text=when + "sem origem do lobby da campeã hoje")
+                elif need["convert"] is None:
+                    out.update(tone="bad", text=when + f"não chega à força {need['target']:,}".replace(",", "."))
+                elif need["convert"]:
+                    out.update(tone="warn", text=when + f"converte {need['convert']:,} para força {need['target']:,}".replace(",", "."))
                 else:
-                    out.update(tone="ok", text=f"já vence {best['ga'].name} sem converter")
+                    out.update(tone="ok", text=when + f"força {need['now']:,} ≥ {need['target']:,}".replace(",", "."))
         else:
             if route_in and route_in.status == PiracyRoute.SENT:
                 out.update(tone="warn", text=f"{route_in.raider.name} a caminho" + lands(route_in))
@@ -1338,5 +1372,5 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
             "bonus_mark": min(100, round(CREW_BONUS_FULL * 100 / scale)), "points_mark": min(100, round(month.min_points * 100 / scale)),
             "day": max(1, (now - month.starts_at).days + 1) if now > month.starts_at else 0,
             "days": max(1, (month.ends_at - month.starts_at).days),
-            "agenda": day, "matrix": matrix(month, members, rows_by_ga, active, now),
+            "agenda": day, "matrix": matrix(month, members, rows_by_ga, active, now), "crew_plan": crew,
             "delivered": delivered, "oldest": oldest, "deliver_at": _hm(deliver_at(month, now), now)}

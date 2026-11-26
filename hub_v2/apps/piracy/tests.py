@@ -761,3 +761,33 @@ class DailyFlowPiecesTests(Base):
             name = next(ga.name for ga in self.accounts if str(ga.pk) == passer)
             self.assertIn(name, page)
         self.assertIn("lobby", page)
+
+    def test_the_crew_plan_gives_each_passer_the_strength_of_its_day(self):
+        big = [ga for ga in self.accounts if ga.account.label == "grande"]
+        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
+        month = self.plan(champions=[big[0], middle[0]])
+        for ga in self.accounts:
+            self.set_strength(ga, points=12000, crew=2300)                  # base 900 + the bonus of 12.000
+        self.set_strength(big[0], points=0, crew=15000)
+        self.set_strength(middle[0], points=0, crew=15000)
+        rows = services.crew_plan(month)
+        self.assertEqual(len([r for r in rows if r["day"] == 0]), 2)
+        ratio = services.ratio_for(month.min_win_percent)
+        mine = next(r for r in rows if r["day"] == 0 and r["champion"] == big[0])
+        # it must beat the origins of the big lobby: 2.300 at the raid x the chance's ratio
+        self.assertEqual(mine["target"], int(2300 * ratio) + 1)
+        self.assertEqual(mine["cap"], int(15000 / ratio))
+        self.assertTrue(all(o.account_id == big[0].account_id for o in mine["sources"]))
+        # 12.000 points, base 900: 339 crew (3.390 points) leave 8.610, the bonus stays -> 1.239 + 1.400 = target
+        self.assertEqual(mine["convert"], 3390)
+        # 8.000 points: only 1.000 above the bonus limit (100 crew) -> it cannot get there today
+        self.set_strength(mine["passer"], points=8000, crew=2300)
+        short = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
+        self.assertIsNone(short["convert"])
+        self.set_strength(mine["passer"], points=30000, crew=2300)
+        again = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
+        self.assertGreater(again["convert"], 0)
+        plan = services.plan_for(mine["passer"])
+        self.assertEqual(plan["preconvert_points"], again["convert"])
+        page = self.client.get("/pirataria/?server=s1-br").content.decode()
+        self.assertIn("Plano de tripulação", page)
