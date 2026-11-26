@@ -105,7 +105,7 @@ Para espalhar as contas por outros IPs. No servidor do hub, o Redis precisa esta
 Na outra máquina:
 
 ```bash
-docker run -d --restart unless-stopped --name ikabot-agent \
+docker run -d --pull always --restart unless-stopped --name ikabot-agent \
   -e HUB_URL=http://IP_DO_HUB:8000 \
   -e REDIS_URL=redis://:SENHA_DO_REDIS@IP_DO_HUB:6379/0 \
   -e AGENT_TOKEN=O_MESMO_AGENT_TOKEN_DO_HUB \

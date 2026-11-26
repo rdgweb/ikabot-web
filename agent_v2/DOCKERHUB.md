@@ -9,7 +9,7 @@ This is the **Agent**. It does nothing on its own — it needs a running [`black
 On the remote machine, once you already have a hub running elsewhere:
 
 ```bash
-docker run -d --restart unless-stopped \
+docker run -d --pull always --restart unless-stopped \
   -e HUB_URL=http://YOUR_HUB_IP:8000 \
   -e REDIS_URL=redis://:YOUR_REDIS_PASSWORD@YOUR_HUB_IP:6379/0 \
   -e AGENT_TOKEN=YOUR_AGENT_TOKEN \

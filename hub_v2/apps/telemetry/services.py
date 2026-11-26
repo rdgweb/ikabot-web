@@ -185,6 +185,9 @@ def _category_for(action_code: int) -> str:
     return _CATEGORY_RE.sub("", str(info.get("category") or "other").lower())[:32] or "other"
 
 
+AGENT_SEEN_DAYS = 7
+
+
 def build_payload(install_id: str | None = None, items: list[str] | None = None) -> dict:
     """Build the exact JSON document that is sent (schema v1). No credentials or game content."""
     from apps.accounts.models import Account, GameAccount, Node
@@ -201,8 +204,11 @@ def build_payload(install_id: str | None = None, items: list[str] | None = None)
     nodes = Node.objects.filter(active=True)
 
     if "versions" in items:
+        # N-221: only agents heard from lately — a node switched off months ago kept reporting its last version
+        # (0.1.53) every day and looked like a new install running an old agent
+        recent = timezone.now() - timedelta(days=AGENT_SEEN_DAYS)
         agent_versions = (
-            nodes.exclude(agent_version="").values("agent_version").annotate(n=Count("id")).order_by("agent_version")
+            nodes.exclude(agent_version="").filter(agent_last_seen_at__gte=recent).values("agent_version").annotate(n=Count("id")).order_by("agent_version")
         )
         payload["arch"] = _arch()
         payload["agents"] = [{"version": row["agent_version"], "nodes": row["n"]} for row in agent_versions]

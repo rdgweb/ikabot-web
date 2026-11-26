@@ -68,3 +68,9 @@ class CustomerInstallTests(TestCase):
         self.assertIn(" \\\n  -e AGENT_TOKEN=tok_x", linux)
         self.assertIn(' `\n  -e "AGENT_TOKEN=tok_x"', windows)
         self.assertIn("AGENT_NAME=pc-de-casa", linux)
+
+    def test_the_command_always_downloads_the_published_image(self):
+        # N-221: a machine that already had an old "latest" started 0.1.53 — docker only reuses it without --pull always
+        linux, windows = install_commands(hub_url="https://h", node=Node(name="x"), token="t", image="img:latest")
+        for command in (linux, windows):
+            self.assertTrue(command.startswith("docker run -d --pull always "))

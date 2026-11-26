@@ -244,8 +244,9 @@ def install_commands(*, hub_url: str, node, token: str, image: str) -> tuple[str
     agent_name = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in node.name)[:40] or name
     pairs = [("HUB_URL", hub_url), ("AGENT_NODE_ID", str(node.pk)), ("AGENT_TOKEN", token),
              ("AGENT_TRANSPORT", "https"), ("AGENT_NAME", agent_name)]
-    linux = [f"docker run -d --restart unless-stopped --name {name}"] + [f"  -e {key}={value}" for key, value in pairs] + [f"  {image}"]
-    windows = [f"docker run -d --restart unless-stopped --name {name}"] + [f'  -e "{key}={value}"' for key, value in pairs] + [f"  {image}"]
+    # N-221: "--pull always" — without it docker reuses a "latest" the machine already had (a tester got 0.1.53)
+    linux =[f"docker run -d --pull always --restart unless-stopped --name {name}"] + [f"  -e {key}={value}" for key, value in pairs] + [f"  {image}"]
+    windows = [f"docker run -d --pull always --restart unless-stopped --name {name}"] + [f'  -e "{key}={value}"' for key, value in pairs] + [f"  {image}"]
     return " \\\n".join(linux), " `\n".join(windows)
 
 
@@ -425,7 +426,7 @@ class NodeDeployView(PlatformNodeGuard, LoginRequiredMixin, DetailView):
         ctx["supervisor_image"] = supervisor_image
         agent_container_name = f"ikabot-agent-{str(self.object.pk)[:8]}"
         command_lines = [
-            f"docker run -d --restart unless-stopped --name {agent_container_name}",
+            f"docker run -d --pull always --restart unless-stopped --name {agent_container_name}",
             f"  -e HUB_URL={hub_url}",
             f"  -e REDIS_URL={redis_url}",
             f"  -e AGENT_TOKEN={token_shown}",
@@ -434,7 +435,7 @@ class NodeDeployView(PlatformNodeGuard, LoginRequiredMixin, DetailView):
             f"  {agent_image}",
         ]
         ctx["deploy_command"] = (
-            f"docker run -d --restart unless-stopped --name {agent_container_name} \\\n"
+            f"docker run -d --pull always --restart unless-stopped --name {agent_container_name} \\\n"
             f"  -e HUB_URL={hub_url} \\\n"
             f"  -e REDIS_URL={redis_url} \\\n"
             f"  -e AGENT_TOKEN={token_shown} \\\n"
@@ -454,7 +455,7 @@ class NodeDeployView(PlatformNodeGuard, LoginRequiredMixin, DetailView):
             ctx["new_host_token"] = new_host_token
             host_token_shown = new_host_token or "<CHAVE-DA-MAQUINA>"
             ctx["supervisor_command"] = (
-                "docker inspect ikabot-host-supervisor >/dev/null 2>&1 || docker run -d \\\n"
+                "docker inspect ikabot-host-supervisor >/dev/null 2>&1 || docker run -d --pull always \\\n"
                 "  --name ikabot-host-supervisor --restart unless-stopped \\\n"
                 "  --read-only --cap-drop ALL --security-opt no-new-privileges:true \\\n"
                 "  --pids-limit 100 --memory 192m --cpus 0.50 --tmpfs /tmp:rw,noexec,nosuid,size=16m \\\n"

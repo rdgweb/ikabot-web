@@ -28,7 +28,11 @@ def _ok(status=204):
 class TelemetryServiceTests(TestCase):
     def setUp(self):
         cache.clear()
-        node = Node.objects.create(name="secret-node-name", agent_version="0.1.57", active=True, external_ip="203.0.113.9")
+        node = Node.objects.create(name="secret-node-name", agent_version="0.1.57", active=True, external_ip="203.0.113.9",
+                                   agent_last_seen_at=timezone.now())
+        # N-221: an agent not heard from in months is not reported with its last version
+        Node.objects.create(name="dead", agent_version="0.1.53", active=True,
+                            agent_last_seen_at=timezone.now() - timedelta(days=120))
         account = Account.objects.create(node=node, label="private-label", email="private@example.com")
         for index, (number, name) in enumerate(((61, "PlayerOne"), (61, "PlayerTwo"), (44, "PlayerThree"))):
             GameAccount.objects.create(
@@ -61,7 +65,7 @@ class TelemetryServiceTests(TestCase):
 
         self.assertEqual(payload["schema"], 1)
         self.assertTrue(payload["share_ip"])
-        self.assertEqual(payload["counts"], {"lobby_accounts": 1, "game_accounts": 3, "nodes": 1})
+        self.assertEqual(payload["counts"], {"lobby_accounts": 1, "game_accounts": 3, "nodes": 2})  # active nodes, seen or not
         self.assertEqual(payload["agents"], [{"version": "0.1.57", "nodes": 1}])
         self.assertEqual(
             payload["worlds"],
