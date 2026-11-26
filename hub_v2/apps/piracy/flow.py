@@ -60,16 +60,24 @@ def _block(month, now=None) -> tuple[int, int]:
 # ── the members ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 def join_new(month) -> int:
-    """Accounts that got a Pirate Fortress and its job after the plan was drawn enter it as origins."""
+    """The plan follows the accounts whose Pirate Fortress job is active: one that got its fortress and job enters as
+    an origin; an origin or passer whose job is no longer active leaves (it comes back when the job runs again).
+    The champions stay — a champion without its job shows on the page instead. Returns how many changed."""
     from . import services
 
-    have = set(month.members.values_list("game_account_id", flat=True))
-    added = 0
-    for ga in services.eligible(month.server_id):
-        if ga.pk not in have and ga.account.organization_id == month.organization_id:
+    able = {ga.pk: ga for ga in services.eligible(month.server_id) if ga.account.organization_id == month.organization_id}
+    stored = list(month.members.all())
+    have = {m.game_account_id for m in stored}
+    changed = 0
+    for pk, ga in able.items():
+        if pk not in have:
             PiracyMember._base_manager.create(month=month, game_account=ga, role=PiracyMember.ORIGIN, group=1)
-            added += 1
-    return added
+            changed += 1
+    gone = [m.pk for m in stored if m.role != PiracyMember.CHAMPION and m.game_account_id not in able]
+    if gone:
+        PiracyMember._base_manager.filter(pk__in=gone).delete()
+        changed += len(gone)
+    return changed
 
 
 def _stored(month) -> list:

@@ -767,16 +767,18 @@ def _convert_to_win(month, mine: dict, theirs: dict, base_cap) -> int | None:
 
 
 def passer_need(month, champion, passer, members, fresh: dict | None = None) -> dict:
-    """N-263: the crew plan of one passer of the day — the strength it needs at its raids to beat (with the month's
-    chance) every origin of its champion's lobby that day (the ones the champion can never take directly), each
-    holding min_points or more then (the bonus); never above what its champion still beats while it carries the
-    points (cap). {"target", "now", "convert" (points to convert now; None: its points do not reach it), "sources",
-    "left_out" (origins over the cap: they wait for another way)}."""
+    """N-263: the crew plan of one passer of the day — the strength to have at its raids on the origins of its
+    champion's lobby (the ones the champion never takes directly), each holding min_points or more then (the bonus).
+    Not "beat them all": the strength that brings the most points for the least conversion — an origin with a crew
+    out of reach (ScorpiO 7.052 after converting by hand) does not raise the bar for the others. Never above what its
+    champion still beats while it carries the points (cap).
+    {"target", "now", "convert" (points to convert now; None: its points reach no origin), "cap", "sources" (the
+    origins it beats at the target), "left_out" (the ones above it: another way or another day)}."""
     ratio = ratio_for(month.min_win_percent)
     mine = {**strength(passer), **(fresh or {})}
     champ = strength(champion)["crew"]
     cap = int(champ / ratio) if champ else None             # the strength it may have when its champion raids it
-    needs = []
+    origins = []
     for m in members:
         o = m.game_account
         if m.role != PiracyMember.ORIGIN or o.account_id != champion.account_id or o.account_id == passer.account_id:
@@ -784,18 +786,35 @@ def passer_need(month, champion, passer, members, fresh: dict | None = None) -> 
         theirs = strength(o)
         if theirs["crew"] is None:
             continue
-        needs.append((int(at_raid(month, theirs["crew"], theirs["points"]) * ratio) + 1, o))
-    within = [(need, o) for need, o in needs if cap is None or need <= cap]
-    target = max((need for need, _o in within), default=None)
-    out = {"target": target, "now": mine.get("crew"), "convert": 0, "cap": cap,
-           "sources": [o for _n, o in sorted(within, key=lambda item: item[0])],
-           "left_out": [o for need, o in needs if cap is not None and need > cap]}
-    if target and mine.get("crew") is not None and mine["crew"] < target:
-        points = int(mine.get("points") or 0)
-        base = mine["crew"] - crew_bonus(points)
-        # it carries the collection when its champion raids it: the whole bonus counts on top of the base then
-        cap_base = cap - CREW_BONUS_MAX if cap is not None else None
-        out["convert"] = convert_for(base, points, target, cap_base)
+        need = int(at_raid(month, theirs["crew"], theirs["points"]) * ratio) + 1
+        origins.append((need, max(int(theirs["points"] or 0), 0), o))
+    origins.sort(key=lambda item: item[0])
+    out = {"target": None, "now": mine.get("crew"), "convert": None, "cap": cap, "sources": [],
+           "left_out": [o for _n, _p, o in origins]}
+    if not origins:
+        out["convert"] = 0
+        return out
+    points = int(mine.get("points") or 0)
+    base = mine["crew"] - crew_bonus(points) if mine.get("crew") is not None else None
+    cap_base = cap - CREW_BONUS_MAX if cap is not None else None   # it carries the collection when emptied
+    best = None
+    for need, _p, _o in origins:
+        if cap is not None and need > cap:
+            break
+        if base is None:
+            break
+        convert = 0 if mine["crew"] >= need else convert_for(base, points, need, cap_base)
+        if convert is None:
+            continue
+        gain = sum(p for n, p, _o in origins if n <= need) - convert
+        if best is None or gain > best[0]:
+            best = (gain, need, convert)
+    if best is None:
+        out["target"] = origins[0][0]                        # not even the weakest: shown as out of reach
+        return out
+    _gain, target, convert = best
+    out.update(target=target, convert=convert, sources=[o for n, _p, o in origins if n <= target],
+               left_out=[o for n, _p, o in origins if n > target])
     return out
 
 

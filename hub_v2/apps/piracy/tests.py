@@ -454,6 +454,10 @@ class AgendaTests(Base):
         self.set_strength(ga, points=0, crew=1000)
         self.agent(f"/api/agent/piracy/next/?game_account_id={self.accounts[0].pk}")
         self.assertEqual(month.members.get(game_account=ga).role, "origin")
+        # its job stops: it leaves the plan (and comes back when the job runs again)
+        Job.objects.filter(game_account=ga).update(status="cancelled")
+        self.agent(f"/api/agent/piracy/next/?game_account_id={self.accounts[0].pk}")
+        self.assertFalse(month.members.filter(game_account=ga).exists())
 
 
 class FinalPhaseTests(Base):
@@ -776,6 +780,7 @@ class DailyFlowPiecesTests(Base):
         mine = next(r for r in rows if r["day"] == 0 and r["champion"] == big[0])
         # it must beat the origins of the big lobby: 2.300 at the raid x the chance's ratio
         self.assertEqual(mine["target"], int(2300 * ratio) + 1)
+        self.assertTrue(mine["sources"])
         self.assertEqual(mine["cap"], int(15000 / ratio))
         self.assertTrue(all(o.account_id == big[0].account_id for o in mine["sources"]))
         # 12.000 points, base 900: 339 crew (3.390 points) leave 8.610, the bonus stays -> 1.239 + 1.400 = target
@@ -784,6 +789,14 @@ class DailyFlowPiecesTests(Base):
         self.set_strength(mine["passer"], points=8000, crew=2300)
         short = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
         self.assertIsNone(short["convert"])
+        # an origin with a crew out of reach does not raise the bar for the others: it is left out
+        strong = mine["sources"][0]
+        self.set_strength(mine["passer"], points=12000, crew=2300)
+        self.set_strength(strong, points=1000, crew=8000)
+        kept = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
+        self.assertEqual((kept["target"], kept["convert"]), (int(2300 * ratio) + 1, 3390))
+        self.assertIn(strong, kept["left_out"])
+        self.set_strength(strong, points=12000, crew=2300)
         self.set_strength(mine["passer"], points=30000, crew=2300)
         again = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
         self.assertGreater(again["convert"], 0)
