@@ -43,7 +43,10 @@ test('monthly estimate keeps plan and lobby add-ons separate on desktop and mobi
       await page.waitForURL(/platform_agents=6/);
       await page.getByText('R$ 148,70',{exact:false}).waitFor();
       assert.ok(await page.getByText('R$ 89,40',{exact:true}).isVisible());
-      assert.equal(await page.locator('body').evaluate(el => el.scrollWidth > innerWidth),false);
+      const overflow = await page.evaluate(() => [...document.querySelectorAll('body *')]
+        .filter(el => el.getBoundingClientRect().right > innerWidth + 1)
+        .map(el => `${el.tagName}.${el.className}: ${Math.round(el.getBoundingClientRect().right)}`).slice(0, 12));
+      assert.equal(await page.locator('body').evaluate(el => el.scrollWidth > innerWidth),false, JSON.stringify({viewport,overflow}));
       if(process.env.OFFER_SCREENSHOT_DIR) {
         fs.mkdirSync(process.env.OFFER_SCREENSHOT_DIR,{recursive:true});
         await page.screenshot({path:path.join(process.env.OFFER_SCREENSHOT_DIR,`offer-${viewport.width}.png`),fullPage:true});
