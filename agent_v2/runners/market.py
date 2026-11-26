@@ -650,6 +650,11 @@ class InternalMarketBuyRunner(BaseRunner):
             )
             if transporter_wait is not None:
                 return transporter_wait
+            action_points_wait = self._maybe_reschedule_for_action_points(
+                jid=jid, inputs=inputs, order_id=str(order_id), buyer_city_name=str(buyer_city_name), exc_str=exc_str,
+            )
+            if action_points_wait is not None:
+                return action_points_wait
             loginlink_failed = "loginlink falhou" in exc_str.lower()
             if loginlink_failed:
                 max_login_retries = 3
@@ -948,6 +953,42 @@ class InternalMarketBuyRunner(BaseRunner):
             ),
         )
         return RunnerResult(success=True, data={"status": "transporters_wait", "delay": delay_seconds})
+
+    _ACTION_POINTS_FEEDBACK = ("pontos de a", "action point", "aktionspunkt", "puntos de acci")
+    _ACTION_POINTS_MAX_RETRIES = 12          # 10m, 20m, 40m, then 1h each: ~10h before the order gives up
+    _ACTION_POINTS_MAX_WAIT_SECONDS = 3600
+
+    def _maybe_reschedule_for_action_points(
+        self,
+        *,
+        jid: str,
+        inputs: dict[str, Any],
+        order_id: str,
+        buyer_city_name: str,
+        exc_str: str,
+    ) -> RunnerResult | None:
+        """N-245: the game refused the buy because the buying city has no action point left. Nothing was bought, so the
+        same order waits for a point to come back (a mission of that city ending) instead of failing — a failed order
+        made the construction plan open a new one every half hour, and each failed the same way."""
+        if not any(key in exc_str.lower() for key in self._ACTION_POINTS_FEEDBACK):
+            return None
+        tries = int(inputs.get("action_points_retry_count", 0)) + 1
+        if tries > self._ACTION_POINTS_MAX_RETRIES:
+            self.log(jid, "error", f"[Order {order_id}] {buyer_city_name} continua sem pontos de acao apos "
+                                   f"{self._ACTION_POINTS_MAX_RETRIES} tentativas — falhando a ordem")
+            try:
+                self.hub.market_order_fail(
+                    str(order_id), note=f"Cidade compradora sem pontos de acao apos {self._ACTION_POINTS_MAX_RETRIES} tentativas.")
+            except Exception as fail_exc:
+                self.log(jid, "warn", f"[Order {order_id}] Falha ao marcar ordem como failed: {fail_exc}")
+            return None
+        delay = min(self._ACTION_POINTS_MAX_WAIT_SECONDS, 600 * 2 ** (tries - 1))
+        retry_inputs = dict(inputs)
+        retry_inputs["action_points_retry_count"] = tries
+        self.hub.reschedule_job(jid, delay_seconds=delay, inputs=retry_inputs)
+        self.log(jid, "warn", f"[Order {order_id}] {buyer_city_name} sem pontos de acao; nada foi comprado. "
+                              f"Tentativa {tries}/{self._ACTION_POINTS_MAX_RETRIES}; nova tentativa em {delay // 60} min")
+        return RunnerResult(success=True, data={"status": "action_points_wait", "retry": tries, "delay": delay})
 
     def _maybe_reschedule_for_transporters_from_error(
         self,
