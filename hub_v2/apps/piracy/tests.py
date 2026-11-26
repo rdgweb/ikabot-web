@@ -724,6 +724,12 @@ class DailyFlowPiecesTests(Base):
                                    status="done", done_at=timezone.now(), due_from=timezone.now(), due_until=timezone.now())
         after = services.strength(target)
         self.assertEqual((after["points"], after["crew"]), (0, 2210 - services.CREW_BONUS_MAX))
+        # a raid still on its way that has already landed counts too (no second raid on an empty account)
+        PiracyRoute.objects.filter(target=target).delete()
+        PiracyRoute.objects.create(month=month, group=1, week=1, stage=1, raider=raider, target=target, status="sent",
+                                   sent_at=timezone.now() - timedelta(minutes=20), arrives_at=timezone.now() - timedelta(minutes=5),
+                                   due_from=timezone.now(), due_until=timezone.now() + timedelta(hours=6))
+        self.assertEqual(services.strength(target)["points"], 0)
 
     def test_the_raid_says_when_it_lands(self):
         month = self.plan()

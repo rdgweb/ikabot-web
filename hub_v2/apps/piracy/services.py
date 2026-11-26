@@ -516,14 +516,19 @@ def _read_at(inputs: dict) -> int:
 
 
 def robbed_after(game_account, read_at: int):
-    """N-263: when one of the plan's raids took this account's points after the job last read them (None: not since).
+    """N-263: when one of the plan's raids took this account's points after the job last read them (None: not since):
+    a raid reported won, or one on its way that has already landed (the raider reports only when its ship is back).
     The winner takes all the capture points at once, so until the next reading it holds none."""
+    from django.db.models import Q
+
     if not read_at:
         return None
     since = datetime.fromtimestamp(read_at, tz=datetime_timezone.utc)
-    route = (PiracyRoute._base_manager.filter(target=game_account, status=PiracyRoute.DONE, done_at__gt=since)
-             .order_by("-done_at").first())
-    return route.done_at if route else None
+    landed = (Q(status=PiracyRoute.DONE, done_at__gt=since)
+              | Q(status=PiracyRoute.SENT, arrives_at__gt=since, arrives_at__lte=timezone.now()))
+    times = [done or arrives for done, arrives in PiracyRoute._base_manager.filter(target=game_account).filter(landed)
+             .values_list("done_at", "arrives_at")]
+    return max(times) if times else None
 
 
 def strength(game_account) -> dict:
