@@ -99,33 +99,36 @@ def build(month, now: datetime | None = None, read: dict | None = None) -> Tree:
     others = sorted([n for n in nodes.values() if not n.champion and n.power is not None], key=lambda n: -n.power)
     unreached = [n for n in nodes.values() if not n.champion and n.power is None]
     direct_from = max(month.direct_points or 0, month.min_points)
-    margin = services.BALANCE_SHARE
-
     def by_load(heads):
-        """N-217: within the margin any champion may take it; past it, the one that got less first."""
-        low = min((c.load for c in heads), default=0)
-        return sorted(heads, key=lambda c: (0 if c.load - low <= max(month.min_points, margin * c.load) else c.load, -(c.power or 0)))
+        """The champion that gets less (what it took this month plus what the day's tree sends it) first."""
+        return sorted(heads, key=lambda c: (c.load, -(c.power or 0)))
 
     for v in others:
         raider = nodes.get(active.get(v.pk))
-        if raider is not None and (raider.champion or raider.root is not None) and raider.ga.account_id != v.ga.account_id                 and raider.power is not None and v.at_raid is not None                 and services.sure_win(raider.power, v.at_raid, month.min_win_percent):
+        if (raider is not None and (raider.champion or raider.root is not None) and raider.ga.account_id != v.ga.account_id
+                and raider.power is not None and v.at_raid is not None
+                and services.sure_win(raider.power, v.at_raid, month.min_win_percent)):
             v.parent, v.root, v.depth, v.why = raider, raider.root, raider.depth + 1, "assalto a caminho"
             raider.children.append(v)
             v.root.load += v.points
             continue
-        heads = by_load([c for c in champions if can(c, v)])
-        chains = sorted([u for u in others if u.root is not None and u is not v and can(u, v)],
-                        key=lambda u: (u.depth, u.root.load, -u.power))
-        if heads and (v.points >= direct_from or not chains):
-            parent = heads[0]
-            v.why = v.why or ("direto" if v.points >= direct_from else "direto (sem corrente)")
-        elif chains:
-            parent = chains[0]
-            v.why = v.why or "corrente"
-        else:
+        heads = [c for c in champions if can(c, v)]
+        chains = [u for u in others if u.root is not None and u is not v and can(u, v)]
+        if not heads and not chains:
             unreached.append(v)
             v.why = "sem caminho hoje"
             continue
+        # the side of the champion that gets less in the day's tree first; on that side, the X rule
+        roots = {c.root.pk: c.root for c in heads + chains}
+        root = by_load(list(roots.values()))[0]
+        heads = [c for c in heads if c.pk == root.pk]
+        chains = sorted([u for u in chains if u.root.pk == root.pk], key=lambda u: (u.depth, -u.power))
+        if heads and (v.points >= direct_from or not chains):
+            parent = heads[0]
+            v.why = "direto" if v.points >= direct_from else "direto (sem corrente)"
+        else:
+            parent = chains[0]
+            v.why = "corrente"
         v.parent, v.root, v.depth = parent, parent.root, parent.depth + 1
         parent.children.append(v)
         v.root.load += v.points

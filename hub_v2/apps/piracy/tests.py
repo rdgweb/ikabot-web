@@ -449,19 +449,15 @@ class ChampionBalanceTests(Base):
         self.set_strength(target, points=15000, crew=1000)
         self.set_strength(big[0], points=0, crew=30000)
         self.set_strength(middle[0], points=0, crew=30000)
-        # within the margin it is free: the one that asks first takes it
+        # N-263: the day's tree sends a target both may take to the champion that got less
         PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=big[0], target=middle[1],
                                    target_points=20000, status="done", due_from=timezone.now(), due_until=timezone.now())
         PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=middle[0], target=big[1],
                                    target_points=18000, status="done", due_from=timezone.now(), due_until=timezone.now())
         self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
-        self.assertTrue(PiracyRoute.objects.filter(raider=big[0], target=target, status="planned").exists())
-        PiracyRoute.objects.filter(raider=big[0], target=target).delete()
-        # far ahead (60.000 against 18.000): it leaves the target to the other champion, which takes it
+        self.assertFalse(PiracyRoute.objects.filter(raider=big[0], target=target, status="planned").exists())
         PiracyRoute.objects.create(month=month, group=1, week=1, stage=2, raider=big[0], target=middle[2],
                                    target_points=40000, status="done", due_from=timezone.now(), due_until=timezone.now())
-        self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
-        self.assertFalse(PiracyRoute.objects.filter(raider=big[0], target=target, status="planned").exists())
         self.agent(f"/api/agent/piracy/next/?game_account_id={middle[0].pk}")
         self.assertTrue(PiracyRoute.objects.filter(raider=middle[0], target=target, status="planned").exists())
         self.assertEqual(services.champion_takes(month)[big[0].pk], 60000)
@@ -609,6 +605,9 @@ class TreeTests(Base):
 
     def test_the_chain_grows_in_strength_and_crosses_lobbies(self):
         month, big, middle, small = self.setup_chain()
+        # the only champion of another lobby already took it in the last days: it can only go through a chain
+        PiracyRoute.objects.create(month=month, group=1, week=1, stage=1, raider=middle[0], target=big[1], status="done",
+                                   due_from=timezone.now(), due_until=timezone.now())
         t = daytree.build(month)
         ratio = services.ratio_for(month.min_win_percent)
         for node in t.nodes.values():
