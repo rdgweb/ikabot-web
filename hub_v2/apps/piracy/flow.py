@@ -169,11 +169,12 @@ def build_block(month, number: int, fixed: list[dict] | None = None) -> list[dic
 
 
 def replan_rest(month, now: datetime | None = None) -> None:
-    """The days after today are drawn again (a champion took a future passer of its directly: the pair is locked on
-    that passer's day, so another account takes the day)."""
+    """The days after today are drawn again — the rest of this block and the next one (a champion took a future
+    passer of its directly: the pair is locked on that passer's day, so another account takes the day)."""
     number, day = _block(month, now)
     days = agenda(month, now)
     turns = dict(month.turns or {})
+    turns.pop(f"block:{number + 1}", None)
     turns[f"block:{number}"] = build_block(month, number, fixed=days[:day + 1])
     month.turns = turns
     if month.pk:
@@ -200,10 +201,37 @@ def today(month, now: datetime | None = None) -> dict:
     return days[day] if day < len(days) else {}
 
 
+def upcoming(month, now: datetime | None = None) -> list[dict]:
+    """The passer days from today on: the rest of this block and the whole next one (drawn ahead, so an account that
+    passes at the start of the next block converts in the days before). [{"offset": days from today, "start": when
+    that day begins, "champion": pk, "passer": pk}] (strings)."""
+    now = now or timezone.now()
+    number, day = _block(month, now)
+    length = max(1, month.pair_days or 3)
+    today_start = day_start(month, now)
+    out = []
+    for index, row in enumerate(agenda(month, now)):
+        if index >= day:
+            for champion, passer in row.items():
+                out.append({"offset": index - day, "start": today_start + timedelta(days=index - day),
+                            "champion": champion, "passer": passer})
+    following = today_start + timedelta(days=length - day)          # the first day of the next block
+    if not month.ends_at or following < month.ends_at:
+        for index, row in enumerate(agenda(month, following + timedelta(hours=1))):
+            for champion, passer in row.items():
+                out.append({"offset": length - day + index, "start": following + timedelta(days=index),
+                            "champion": champion, "passer": passer})
+    return out
+
+
 def still_to_pass(month, champion, now: datetime | None = None) -> set:
-    """Accounts still to be this champion's passer later in the block — it never raids them directly."""
-    _number, day = _block(month, now)
-    return {row[str(champion.pk)] for row in agenda(month, now)[day + 1:] if str(champion.pk) in row}
+    """Accounts to be this champion's passer after today and within pair_days (this block or the next) — it never
+    raids them directly (the pair would still be locked on that day) unless they hold too much (see
+    services.champion_may_take)."""
+    now = now or timezone.now()
+    locked_until = now + timedelta(days=month.pair_days or 3)          # a raid now locks the pair until then
+    return {row["passer"] for row in upcoming(month, now) if row["offset"] >= 1 and row["champion"] == str(champion.pk)
+            and row["start"] + timedelta(days=1) - DELIVER_MARGIN < locked_until}
 
 
 def members_today(month, now: datetime | None = None) -> list:

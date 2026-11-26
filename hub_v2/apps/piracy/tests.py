@@ -114,7 +114,9 @@ class PlanTests(Base):
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
         self.assertEqual((data["convert_all"], data["hold"]), (True, False))
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")
-        self.assertEqual((data["convert_all"], data["hold"], data["share_percent"], data["route"]), (False, True, 3, None))
+        # N-263: an account with a passer day ahead converts by the crew plan instead of the daily share
+        share = 0 if data.get("convert_total") is not None else 3
+        self.assertEqual((data["convert_all"], data["hold"], data["share_percent"], data["route"]), (False, True, share, None))
 
     def test_the_champion_takes_only_sure_wins_never_its_lobby_and_once_a_week(self):
         month = self.plan(direct_points=0)
@@ -533,7 +535,13 @@ class JobCardTests(Base):
         self.assertEqual(JobListView._piracy_plan(self.jobs[champion.pk])["text"], "converte tudo e junta os pontos")
         shown = JobListView._piracy_plan(self.jobs[holder.pk])
         self.assertEqual(shown["role"], roles[holder.pk])
-        self.assertTrue(shown["text"].startswith(f"converte {month.share_percent - services.SHARE_JITTER_DOWN}-{month.share_percent + services.SHARE_JITTER_UP}% a cada {month.share_every_hours}h"))
+        plan = services.plan_for(holder)
+        if plan["convert_total"] is None:                               # no passer day ahead: the daily share
+            self.assertTrue(shown["text"].startswith(f"converte {month.share_percent - services.SHARE_JITTER_DOWN}-{month.share_percent + services.SHARE_JITTER_UP}% a cada {month.share_every_hours}h"))
+        elif plan["convert_total"]:                                     # N-263: the crew plan
+            self.assertIn("aos poucos até", shown["text"])
+        else:
+            self.assertIn("segura os pontos", shown["text"])
         self.assertFalse(PiracyRoute.objects.exists())                  # reading the card draws nothing
         services.close_month(month)
         self.assertIsNone(JobListView._piracy_plan(self.jobs[holder.pk]))
@@ -680,8 +688,10 @@ class TurnPassersTests(Base):
             if m.role == "champion":
                 self.set_strength(m.game_account, points=0, crew=30000)   # a champion beats its passers
         self.set_strength(passer, points=20000, crew=1500)
-        plan = services.plan_for(passer)
-        self.assertGreater(plan["preconvert_points"], 0)
+        with patch.object(services, "collect_from", return_value=timezone.now() + timedelta(hours=3)):
+            plan = services.plan_for(passer)
+        self.assertGreater(plan["convert_total"], 0)                      # N-263: converted a part at each mission
+        self.assertGreater(plan["convert_by"], 0)
         self.assertEqual(plan["share_percent"], 0)                        # a passer has no periodic share
 
 
@@ -804,7 +814,47 @@ class DailyFlowPiecesTests(Base):
         self.set_strength(mine["passer"], points=30000, crew=2300)
         again = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
         self.assertGreater(again["convert"], 0)
-        plan = services.plan_for(mine["passer"])
-        self.assertEqual(plan["preconvert_points"], again["convert"])
+        with patch.object(services, "collect_from", return_value=timezone.now() + timedelta(hours=3)):
+            plan = services.plan_for(mine["passer"])
+            # what reaches the strength, by the start of its collecting (a part at each mission, by the agent)
+            self.assertEqual(plan["convert_total"], again["convert"])
+            self.assertEqual(plan["share_percent"], 0)
+            # at the strength: it stops
+            self.set_strength(mine["passer"], points=30000, crew=again["target"] + 5)
+            self.assertEqual(services.plan_for(mine["passer"])["convert_total"], 0)
+        # collecting: what it holds is the champion's, nothing is converted
+        self.set_strength(mine["passer"], points=30000, crew=2300)
+        with patch.object(services, "collect_from", return_value=timezone.now() - timedelta(minutes=1)):
+            self.assertEqual(services.plan_for(mine["passer"])["convert_total"], 0)
         page = self.client.get("/pirataria/?server=s1-br").content.decode()
         self.assertIn("Plano de tripulação", page)
+
+
+class CrewHorizonTests(Base):
+    """N-263: the agenda of the next block is drawn ahead, so an account that passes on its first day converts in the
+    days before; an account with no passer day ahead keeps the daily share."""
+
+    def test_the_next_block_is_known_and_its_passers_convert_ahead(self):
+        big = [ga for ga in self.accounts if ga.account.label == "grande"]
+        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
+        month = self.plan(champions=[big[0], middle[0]])
+        slots = flow.upcoming(month)
+        self.assertGreater(max(s["offset"] for s in slots), month.pair_days - 1)    # it reaches into the next block
+        month.refresh_from_db()
+        self.assertEqual(len([k for k in month.turns if k.startswith("block:")]), 2)
+        for ga in self.accounts:
+            self.set_strength(ga, points=30000, crew=2300)
+        self.set_strength(big[0], points=0, crew=15000)
+        self.set_strength(middle[0], points=0, crew=15000)
+        later = next(s for s in slots if s["offset"] >= 1)
+        passer = next(ga for ga in self.accounts if str(ga.pk) == later["passer"])
+        if passer.pk not in {g.pk for g in self.passers(month)}:
+            plan = services.plan_for(passer)
+            self.assertIsNotNone(plan["convert_total"])
+            self.assertEqual(plan["share_percent"], 0)
+        planned = {s["passer"] for s in slots}
+        other = next((ga for ga in self.accounts[1:] if str(ga.pk) not in planned and ga not in (big[0], middle[0])), None)
+        if other is not None:
+            plan = services.plan_for(other)
+            self.assertIsNone(plan["convert_total"])
+            self.assertEqual(plan["share_percent"], month.share_percent)

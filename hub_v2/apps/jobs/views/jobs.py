@@ -1882,6 +1882,17 @@ class JobListView(FilterSortListView):
             text = "converte tudo e junta os pontos"
         elif plan["final"]:
             text = "segura os pontos (fase final: não converte)"
+        elif plan.get("convert_total") is not None:
+            # N-263: the crew plan — what it converts, a part at each mission, until its passer day
+            if plan["convert_total"]:
+                from django.utils import timezone as _tz
+                from datetime import datetime as _dt, timezone as _utc
+
+                by = _tz.localtime(_dt.fromtimestamp(plan["convert_by"], tz=_utc.utc))
+                text = (f"converte {plan['convert_total']:,} aos poucos até {by:%d/%m %H:%M} "
+                        f"(força {plan['convert_target']:,} no dia de passagem)").replace(",", ".")
+            else:
+                text = "segura os pontos (força do dia de passagem já alcançada)"
         elif plan["role"] == "passer":
             # N-255: a passer converts ahead, at its turn, only the least that beats an origin
             if plan.get("preconvert_points"):

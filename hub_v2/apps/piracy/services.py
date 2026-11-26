@@ -728,6 +728,7 @@ def plan_for(game_account, now: datetime | None = None, fresh: dict | None = Non
     out = {"member": member, "month": month, "members": now_members, "role": role, "hold": hold, "final": False,
            "convert_all": not hold, "share_percent": month.share_percent if role == PiracyMember.ORIGIN else 0,
            "share_jitter": [SHARE_JITTER_DOWN, SHARE_JITTER_UP], "preconvert_points": 0, "preconvert_target": "",
+           "convert_total": None, "convert_by": 0, "convert_target": None,
            "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None, "base_cap": None,
            "bonus_max": CREW_BONUS_MAX, "bonus_full": CREW_BONUS_FULL}
     if hold:
@@ -737,18 +738,18 @@ def plan_for(game_account, now: datetime | None = None, fresh: dict | None = Non
         mine_budget = budgets(month, {k: v["crew"] for k, v in read.items()},
                               {k: v["points"] for k, v in read.items() if v["points"] is not None}).get(game_account.pk) or {}
         out.update(crew_cap=mine_budget.get("cap"), crew_floor=None, base_cap=mine_budget.get("cap_base"))
-        if role == PiracyMember.PASSER:
-            # N-263: the crew plan — on its day, as early as it can, the passer converts the least that makes its
-            # strength beat every origin of its champion's lobby it collects (a conversion counts only when over)
-            champion_pk = flow.champion_of(month, game_account, now)
-            champion = next((m.game_account for m in now_members if str(m.game_account_id) == champion_pk), None)
-            if champion is not None:
-                need = passer_need(month, champion, game_account, now_members, fresh)
-                if need["convert"]:
-                    out.update(preconvert_points=need["convert"], preconvert_target=f"as origens (força {need['target']})")
+        # N-263: the crew plan — the agenda says who passes and when; until that day the account converts, a part at
+        # each mission, what makes its strength beat the origins it collects then (convert_total by convert_by); it
+        # stops there or at the crew its own raiders still beat, and converts nothing of what it collects for its
+        # champion. The others keep the plan's 1-3% a day, also a part at each mission.
+        conv = conversion_plan(month, game_account, now_members, read.get(game_account.pk) or {},
+                               out["base_cap"] if role == PiracyMember.ORIGIN else None, now)
+        if conv is not None:
+            out.update(share_percent=0, convert_total=conv["total"], convert_by=int(conv["by"].timestamp()),
+                       convert_target=conv["target"], preconvert_target=conv["why"])
         # in the final phase of the ranking (the points count for the position at the turn) nobody converts
         if _final_phase(game_account):
-            out.update(share_percent=0, crew_floor=None, final=True, preconvert_points=0)
+            out.update(share_percent=0, crew_floor=None, final=True, preconvert_points=0, convert_total=0)
     return out
 
 
@@ -818,26 +819,48 @@ def passer_need(month, champion, passer, members, fresh: dict | None = None) -> 
     return out
 
 
-def crew_plan(month, now: datetime | None = None) -> list[dict]:
-    """N-263: the crew plan of the rest of the block — for each day and champion, its passer, the strength the passer
-    needs on that day, what it has and what it converts (it converts on its own day, as early as it can: a conversion
-    only counts when it is over)."""
+def conversion_plan(month, game_account, members, mine: dict, base_cap, now: datetime | None = None) -> dict | None:
+    """N-263: what this account converts until its next day as a passer (this block or the next) — None when it has
+    none ahead (it keeps the plan's daily share). The agent converts it a part at each mission, so that the strength
+    is there on that day: {"total": points still to convert (0: stop), "by": when it must be there, "target", "why"}.
+    It stops at the strength or at the crew its own raiders still beat, and converts nothing while it collects (what
+    it holds then is its champion's)."""
     now = now or timezone.now()
-    number, today_index = flow._block(month, now)
-    start = flow.day_start(month, now)
+    row = next((r for r in crew_plan(month, now) if r["passer"].pk == game_account.pk), None)
+    if row is None or not row["target"]:
+        return None
+    out = {"total": 0, "by": row["by"], "target": row["target"], "why": f"as origens (força {row['target']})"}
+    crew, points = mine.get("crew"), int(mine.get("points") or 0)
+    if crew is None or crew >= row["target"] or points <= 0:
+        return out                                          # there: stop
+    if row["day"] == 0 and now >= collect_from(month, game_account, members, now):
+        return out                                          # collecting: what it holds is its champion's
+    base = crew - crew_bonus(points)
+    total = row["convert"] if row["convert"] else (row["target"] - crew) * 10   # unreachable today: what is missing
+    if base_cap is not None:                                # as an origin, its own raiders must still beat it
+        total = min(total, max(0, (base_cap - base) * 10))
+    out["total"] = max(0, int(total)) // 10 * 10
+    return out
+
+
+def crew_plan(month, now: datetime | None = None) -> list[dict]:
+    """N-263: the crew plan of the coming passer days (the rest of this block and the next one) — for each, the
+    passer, the strength it needs that day, what it has and what it still converts (a part at each mission, to be
+    there when the day begins: a conversion only counts when it is over)."""
+    now = now or timezone.now()
     by_pk = {str(m.game_account_id): m.game_account for m in month.members.select_related("game_account__account")}
-    rows = []
-    for index, day in enumerate(flow.agenda(month, now)):
-        if index < today_index:
+    rows, members_of = [], {}
+    for slot in flow.upcoming(month, now):
+        champion, passer = by_pk.get(slot["champion"]), by_pk.get(slot["passer"])
+        if champion is None or passer is None:
             continue
-        at = start + timedelta(days=index - today_index, hours=1)
-        members = flow.members_today(month, at)
-        for champion_pk, passer_pk in day.items():
-            champion, passer = by_pk.get(champion_pk), by_pk.get(passer_pk)
-            if champion is None or passer is None:
-                continue
-            need = passer_need(month, champion, passer, members)
-            rows.append({"day": index - today_index, "date": at, "champion": champion, "passer": passer, **need})
+        if slot["offset"] not in members_of:
+            members_of[slot["offset"]] = flow.members_today(month, slot["start"] + timedelta(hours=1))
+        members = members_of[slot["offset"]]
+        need = passer_need(month, champion, passer, members)
+        # the strength must be there when it starts collecting today, or when its day begins
+        by = collect_from(month, passer, members, now) if slot["offset"] == 0 else slot["start"]
+        rows.append({"day": slot["offset"], "date": slot["start"], "by": by, "champion": champion, "passer": passer, **need})
     return rows
 
 
@@ -969,7 +992,7 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
     flow.join_new(month)                                # N-263: an account that got its fortress and job joins
     extra = {k: plan.get(k) for k in ("convert_all", "share_percent", "share_every_hours", "crew_cap", "crew_floor",
                                       "base_cap", "bonus_max", "bonus_full", "share_jitter", "preconvert_points",
-                                      "preconvert_target")}
+                                      "preconvert_target", "convert_total", "convert_by", "convert_target")}
     if plan.get("waiting"):
         return {"route": None, "hold": True, **extra, "starts_at": int(month.starts_at.timestamp())}
     drop_stale(month, now_members)

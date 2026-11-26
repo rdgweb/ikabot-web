@@ -200,7 +200,7 @@
       <td class="who">{{ r.passer.name }} → {{ r.champion.name }}</td>
       <td>{{ r.now|default_if_none:"?"|intcomma }}</td><td>{{ r.target|default_if_none:"—"|intcomma }}</td><td>{{ r.cap|default_if_none:"—"|intcomma }}</td>
       <td class="who" style="font-weight: 400;">{% for o in r.sources %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if r.left_out %}<small>acima do teto: {% for o in r.left_out %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</small>{% endif %}</td>
-      <td class="{% if r.convert is None %}lock{% elif r.convert %}wait{% else %}ok{% endif %}">{% if not r.target %}—{% elif r.convert is None %}não alcança{% elif r.convert %}converte {{ r.convert|intcomma }}{% else %}pronta{% endif %}</td></tr>
+      <td class="{% if r.convert is None %}lock{% elif r.convert %}wait{% else %}ok{% endif %}">{% if not r.target %}—{% elif r.convert is None %}não alcança{% elif r.convert %}converte {{ r.convert|intcomma }} até {{ r.by|date:"d H:i" }}{% else %}pronta{% endif %}</td></tr>
     {% endfor %}
   </table>
 </section>

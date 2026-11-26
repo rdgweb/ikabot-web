@@ -527,3 +527,25 @@ class SentSecondsTests(unittest.TestCase):
         runner._report_route("j", "r1", "sent", "assalto direto da fortaleza", seconds=900)
         runner._report_route("j", "r1", "done", "ganhou")
         self.assertEqual(sent, [("sent", {"seconds": 900}), ("done", {})])
+
+
+class CrewPlanNextTests(unittest.TestCase):
+    """N-263: the hub says how much is still to convert until the passer day, and by when."""
+
+    def test_plan_next_reads_the_crew_plan(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.hub = types.SimpleNamespace(get_piracy_next=lambda game_account_id: {
+            "route": None, "hold": True, "convert_total": 7220, "convert_by": 1800000000})
+        plan = runner._plan_next("ga")
+        self.assertEqual((plan["convert_total"], plan["convert_by"]), (7220, 1800000000))
+        runner.hub = types.SimpleNamespace(get_piracy_next=lambda game_account_id: {"route": None, "hold": True})
+        self.assertIsNone(runner._plan_next("ga")["convert_total"])            # no passer day ahead: the daily share
+
+    def test_the_daily_share_is_a_part_at_each_mission(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.log = lambda jid, level, text: None
+        converted = []
+        client = types.SimpleNamespace(convert_piracy_points=lambda city_id, crew: converted.append(crew))
+        # 3% a day over a 1 h mission is 0,125% of 40.000 = 50 points = 5 crew
+        runner._share_convert("j", client, "1", {"conversion_factor": 10}, 40000, 3 * 3600 / 86400)
+        self.assertEqual(converted, [5])
