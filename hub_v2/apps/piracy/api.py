@@ -32,7 +32,7 @@ class NextView(APIView):
 
 
 class RouteReportView(APIView):
-    """POST /api/agent/piracy/routes/<id>/ {"status": "sent"|"done"|"failed", "message": "..."}."""
+    """POST /api/agent/piracy/routes/<id>/ {"status": "sent"|"done"|"failed", "message": "...", "seconds": n}."""
 
     authentication_classes = [AgentTokenAuthentication]
     permission_classes = [IsAgent]
@@ -44,5 +44,9 @@ class RouteReportView(APIView):
         status = str(request.data.get("status") or "")
         if status not in (PiracyRoute.SENT, PiracyRoute.DONE, PiracyRoute.FAILED):
             return Response({"error": "status must be sent, done or failed"}, status=400)
-        services.report(route, status, str(request.data.get("message") or ""))
+        try:
+            seconds = int(request.data.get("seconds") or 0)       # N-263: until the raid lands, with "sent"
+        except (TypeError, ValueError):
+            seconds = 0
+        services.report(route, status, str(request.data.get("message") or ""), seconds=seconds)
         return Response({"ok": True, "status": route.status})

@@ -485,3 +485,45 @@ class PlanTurnFieldsTests(unittest.TestCase):
             "preconvert_points": 3330, "preconvert_target": "LordDarkness"})
         plan = runner._plan_next("ga")
         self.assertEqual((plan["share_jitter"], plan["preconvert_points"], plan["preconvert_target"]), ([2, 1], 3330, "LordDarkness"))
+
+
+class ConvertCheckedTests(unittest.TestCase):
+    """N-263: a conversion is checked against the game's answer — the Carcereiro (26/11) logged 17.900 points
+    converted and waited 212 min for a conversion that never happened (it had been raided just before)."""
+
+    def _runner(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        runner.logs = []
+        runner.log = lambda jid, level, text: runner.logs.append((level, text))
+        runner.is_network_error = lambda exc: False
+        return runner
+
+    def test_the_points_left_say_whether_it_came_in(self):
+        runner, sink = self._runner(), {}
+        game = types.SimpleNamespace(convert_piracy_points=lambda city_id, crew: {
+            "capture_points": 8062, "crew_points": 2560, "complete_crew_points": 4000})
+        self.assertEqual(runner._convert_checked("j", game, "1", 1790, 25962, 10, sink), 1790)
+        self.assertEqual(sink["last_capture_points"], 8062)
+
+    def test_nothing_taken_is_no_conversion(self):
+        runner, sink = self._runner(), {}
+        game = types.SimpleNamespace(convert_piracy_points=lambda city_id, crew: {
+            "capture_points": 1131, "crew_points": 770, "complete_crew_points": 2210})
+        # it held 1.131 (raided just before): the 17.900 asked could not leave
+        self.assertEqual(runner._convert_checked("j", game, "1", 1790, 25962, 10, sink), 0)
+        self.assertEqual(sink["last_capture_points"], 1131)
+        self.assertIn("não entrou", runner.logs[-1][1])
+        game = types.SimpleNamespace(convert_piracy_points=lambda city_id, crew: {},
+                                     get_piracy_state=lambda city_id: {"capture_points": 25962})
+        self.assertEqual(runner._convert_checked("j", game, "1", 1790, 25962, 10, {}), 0)
+
+
+class SentSecondsTests(unittest.TestCase):
+    def test_the_hub_hears_when_the_raid_lands(self):
+        runner = PiracyMissionRunner.__new__(PiracyMissionRunner)
+        sent = []
+        runner.hub = types.SimpleNamespace(report_piracy_route=lambda route_id, status, message="", **kw: sent.append((status, kw)))
+        runner.log = lambda jid, level, text: None
+        runner._report_route("j", "r1", "sent", "assalto direto da fortaleza", seconds=900)
+        runner._report_route("j", "r1", "done", "ganhou")
+        self.assertEqual(sent, [("sent", {"seconds": 900}), ("done", {})])

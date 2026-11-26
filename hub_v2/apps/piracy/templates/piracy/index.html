@@ -15,7 +15,22 @@
   .pp-pill.wait { background: rgba(201,146,46,.15); color: #8a6420; }
   .pp-pill i.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px rgba(63,138,90,.15); }
   .pp-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: .45rem; }
-  .pp-kpis { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: .8rem; margin-bottom: .9rem; }
+  .pp-kpis { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr 1fr; gap: .8rem; margin-bottom: .9rem; }
+  .pp-day { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .8rem; margin-bottom: .9rem; }
+  .pp-day .pp-card { padding: .75rem 1rem; display: flex; align-items: center; gap: .8rem; }
+  .pp-day .tl { display: flex; align-items: center; gap: .4rem; font-size: .82rem; color: var(--ik-ink); flex-wrap: wrap; }
+  .pp-day .tl b { font-family: Rajdhani, sans-serif; font-size: 1.05rem; }
+  .pp-day .tl i.bi-arrow-right { color: #cdbb9c; }
+  .pp-mx { width: 100%; border-collapse: separate; border-spacing: 3px; table-layout: fixed; font-size: .72rem; }
+  .pp-mx th { font-weight: 600; color: var(--ik-muted); text-align: center; padding: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pp-mx th small { display: block; font-weight: 400; }
+  .pp-mx td { text-align: center; padding: .4rem .15rem; border-radius: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp-mx td.who { text-align: left; font-size: .8rem; color: var(--ik-ink); font-weight: 600; }
+  .pp-mx td.who small { display: block; font-weight: 400; color: var(--ik-muted); font-size: .68rem; }
+  .pp-mx .ok { background: rgba(63,138,90,.14); color: #2f6b3a; } .pp-mx .lock { background: rgba(201,146,46,.16); color: #8a6420; }
+  .pp-mx .go { background: rgba(79,134,185,.15); color: #2d5f8f; } .pp-mx .wait { background: rgba(140,128,110,.13); color: var(--ik-ink); }
+  .pp-mx .no { color: #b3a68f; }
+  .pp-node .t { font-size: .68rem; color: var(--ik-muted); margin-top: .15rem; } .pp-node .t.old { color: #b5523b; }
   @media (max-width: 1000px) { .pp-kpis { grid-template-columns: 1fr 1fr; } }
   .pp-card { background: var(--ik-paper, #fffdf8); border: 1px solid var(--ik-line); border-radius: 16px; }
   .pp-kpi { padding: .9rem 1.05rem; }
@@ -108,10 +123,12 @@
   <div class="pp-card pp-kpi risk"><div class="pp-lab">Pontos expostos</div><div class="pp-val">{{ chain.exposed|intcomma }}</div>
     <div class="pp-sub">em {{ chain.exposed_count }} conta{{ chain.exposed_count|pluralize }} fora das campeãs</div>
     <div class="pp-stack">{% for p in chain.exposed_parts %}<i title="{{ p.name }}" style="width: {{ p.pct }}%; background: {{ p.color }};"></i>{% endfor %}</div></div>
-  <div class="pp-card pp-kpi"><div class="pp-lab">Próxima troca de papéis</div><div class="pp-val">{{ next_turn_in }}</div>
-    <div class="pp-sub">{{ next_turn|date:"d/m H:i" }} · a cada {{ month.rotate_days }} dias</div></div>
+  <div class="pp-card pp-kpi"><div class="pp-lab">Entrega de hoje</div><div class="pp-val">{{ chain.deliver_at }}</div>
+    <div class="pp-sub">dia vira {{ next_turn|date:"H:i" }} · em {{ next_turn_in }}</div></div>
   <div class="pp-card pp-kpi"><div class="pp-lab">Virada do ranking</div><div class="pp-val">{{ ranking_in }}</div>
     <div class="pp-sub">{{ month.ends_at|date:"d/m H:i" }} · campeãs trocam sozinhas</div></div>
+  <div class="pp-card pp-kpi"><div class="pp-lab">Chegou às campeãs · 24h</div><div class="pp-val">{{ chain.delivered|intcomma }}</div>
+    <div class="pp-sub">{% if chain.oldest %}{{ chain.oldest.ga.name }} parada há {{ chain.oldest.since }}{% else %}nenhuma conta parada{% endif %}</div></div>
   <div class="pp-card pp-kpi"><div class="pp-lab">Melhor posição</div><div class="pp-val">{% if best_place %}{{ best_place }}º{% else %}—{% endif %}</div>
     <div class="pp-sub">{{ points|intcomma }} pts no ranking</div></div>
 </div>
@@ -129,6 +146,18 @@
 </div>
 {% endif %}
 
+{% if chain.agenda %}
+<div class="pp-day">
+  {% for d in chain.agenda %}
+  <div class="pp-card"><span class="pp-crown" style="width: 36px; height: 36px; font-size: 1rem;"><i class="bi bi-calendar-check"></i></span>
+    <div class="tl">{% if d.passer %}<b>{{ d.passer.name }}</b>
+      <span class="pp-sub">{% if d.collecting %}recolhendo{% else %}recolhe às {{ d.collect }}{% endif %}{% if d.sources %} · {{ d.sources }} orige{{ d.sources|pluralize:"m,ns" }}{% endif %}</span>
+      <i class="bi bi-arrow-right"></i><b>{{ d.champion.name }}</b><span class="pp-sub">entrega {{ d.deliver }}</span>
+      {% else %}<b>{{ d.champion.name }}</b><span class="pp-sub">sem passagem hoje · rouba direto</span>{% endif %}</div></div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="pp-main">
   <section class="pp-card pp-sec">
     <h2>Corrente</h2>
@@ -137,7 +166,7 @@
     <div class="pp-flow">
       <div><div class="pp-colh"><span>Origens</span><span>{{ chain.origins|length }}</span></div>{% include "piracy/partials/chain_nodes.html" with nodes=chain.origins %}</div>
       <div class="pp-arrow"><i class="bi bi-arrow-right"></i></div>
-      <div><div class="pp-colh"><span>Passagens</span><span>troca {{ next_turn|date:"d/m H:i" }}</span></div>{% include "piracy/partials/chain_nodes.html" with nodes=chain.passers %}</div>
+      <div><div class="pp-colh"><span>Passagens do dia</span><span>até {{ next_turn|date:"H:i" }}</span></div>{% include "piracy/partials/chain_nodes.html" with nodes=chain.passers %}</div>
       <div class="pp-arrow"><i class="bi bi-arrow-right"></i></div>
       <div><div class="pp-colh"><span>Campeãs</span><span>{{ chain.champions|length }}</span></div>{% include "piracy/partials/chain_nodes.html" with nodes=chain.champions %}</div>
     </div>
@@ -150,7 +179,7 @@
       <span class="pp-ic" style="background: {% if f.kind == 'done' %}rgba(63,138,90,.14){% elif f.kind == 'failed' %}rgba(181,82,59,.14){% else %}rgba(201,146,46,.16){% endif %};">
         <i class="bi {% if f.kind == 'done' %}bi-check-lg{% elif f.kind == 'failed' %}bi-x-lg{% elif f.kind == 'sent' %}bi-send{% else %}bi-hourglass-split{% endif %}"></i></span>
       <div style="min-width: 0;"><b>{{ r.raider.name }} ← {{ r.target_name }}</b>
-        <small>{% if f.kind == 'sent' %}a caminho{% elif f.kind == 'planned' %}sai agora{% else %}{{ r.done_at|default:r.created_at|date:"d/m H:i" }}{% endif %}{% if r.target_points %} · {{ r.target_points|intcomma }} pts{% endif %}{% if f.kind == 'failed' and r.message %} · {{ r.message|truncatechars:48 }}{% endif %}</small></div>
+        <small>{% if f.kind == 'sent' %}a caminho{% if f.lands %} · chega {{ f.lands }}{% endif %}{% elif f.kind == 'planned' %}sai agora{% else %}{{ r.done_at|default:r.created_at|date:"d/m H:i" }}{% endif %}{% if r.target_points %} · {{ r.target_points|intcomma }} pts{% endif %}{% if f.kind == 'failed' and r.message %} · {{ r.message|truncatechars:48 }}{% endif %}</small></div>
     </div>{% endwith %}
     {% empty %}<p class="pp-sub" style="margin: .3rem 0 0;">Nenhum roubo ainda neste plano.</p>{% endfor %}
     {% for r in waiting|slice:":3" %}
@@ -160,12 +189,28 @@
   </section>
 </div>
 
+{% if chain.matrix.rows %}
+<section class="pp-card pp-sec" style="margin-top: .9rem; overflow-x: auto;">
+  <h2>Quem rouba quem hoje</h2>
+  <div class="pp-legend"><span><i style="background: rgba(63,138,90,.4);"></i>pode agora</span><span><i style="background: rgba(201,146,46,.45);"></i>par livre em</span>
+    <span><i style="background: rgba(79,134,185,.45);"></i>assalto a caminho</span><span><i style="background: rgba(140,128,110,.35);"></i>na hora marcada</span></div>
+  <table class="pp-mx" style="min-width: {{ chain.matrix.targets|length|add:1 }}00px;">
+    <tr><th style="width: 110px;"></th>{% for t in chain.matrix.targets %}<th title="{{ t.ga.name }} · {{ t.role }}">{{ t.ga.name }}<small>{{ t.points|intcomma }}</small></th>{% endfor %}</tr>
+    {% for row in chain.matrix.rows %}
+    <tr><td class="who">{{ row.ga.name }}<small>{{ row.role }}</small></td>
+      {% for c in row.cells %}<td class="{{ c.kind }}" title="{{ c.title }}">{{ c.text }}</td>{% endfor %}</tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
 <div class="pp-card pp-rules">
   <span class="pp-lab" style="margin-right: .3rem;">Regras</span>
   <span class="pp-rule"><i class="bi bi-bullseye"></i> rouba a partir de <b>{{ month.min_points|intcomma }}</b></span>
   <span class="pp-rule"><i class="bi bi-shield-check"></i> vitória <b>≥ {{ month.min_win_percent }}%</b></span>
   <span class="pp-rule"><i class="bi bi-arrow-left-right"></i> mesmo par <b>{{ month.pair_days }} dias</b></span>
-  <span class="pp-rule"><i class="bi bi-arrow-repeat"></i> troca de papéis <b>{{ month.rotate_days }} dias</b></span>
+  <span class="pp-rule"><i class="bi bi-clock"></i> dia vira <b>{{ month.turn_hour }}:00</b> no jogo · {{ next_turn|date:"H:i" }} aqui</span>
+  <span class="pp-rule"><i class="bi bi-lightning"></i> campeã direto a partir de <b>{{ month.direct_points|intcomma }}</b></span>
   <span class="pp-rule"><i class="bi bi-coin"></i> origem converte <b>{{ share_low }}–{{ share_high }}%</b> / {{ month.share_every_hours }}h</span>
   <span class="pp-rule"><i class="bi bi-scale"></i> margem entre campeãs <b>{{ balance_pct }}%</b></span>
 </div>
@@ -179,7 +224,8 @@
       <div><label>Rouba a partir de (pts)</label><input type="number" name="min_points" min="100" value="{{ month.min_points }}" class="form-input w-full"></div>
       <div><label>Vitória mínima (%)</label><input type="number" name="min_win_percent" min="50" max="100" value="{{ month.min_win_percent }}" class="form-input w-full"></div>
       <div><label>Mesmo par (dias)</label><input type="number" name="pair_days" min="1" max="30" value="{{ month.pair_days }}" class="form-input w-full"></div>
-      <div><label>Troca de papéis (dias)</label><input type="number" name="rotate_days" min="1" max="30" value="{{ month.rotate_days }}" class="form-input w-full"></div>
+      <div><label>Dia vira às (hora do jogo, GMT+1)</label><input type="number" name="turn_hour" min="0" max="23" value="{{ month.turn_hour }}" class="form-input w-full"></div>
+      <div><label>Campeã direto a partir de (pts)</label><input type="number" name="direct_points" min="0" step="1000" value="{{ month.direct_points }}" class="form-input w-full"></div>
       <div><label>Origem converte (%)</label><input type="number" name="share_percent" min="0" max="100" value="{{ month.share_percent }}" class="form-input w-full"></div>
       <div><label>A cada (horas)</label><input type="number" name="share_every_hours" min="1" max="240" value="{{ month.share_every_hours }}" class="form-input w-full"></div>
     </div>

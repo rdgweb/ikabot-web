@@ -142,7 +142,8 @@ class PiracyView(LoginRequiredMixin, View):
                     if action == "regroup" and current:
                         champions = [c.game_account for c in current.champions.select_related("game_account").order_by("group")]
                         request.POST = request.POST.copy()
-                        for field in ("share_percent", "share_every_hours", "min_win_percent", "min_points", "pair_days", "rotate_days"):
+                        for field in ("share_percent", "share_every_hours", "min_win_percent", "min_points", "pair_days",
+                                      "rotate_days", "turn_hour", "direct_points"):
                             request.POST[field] = str(getattr(current, field))
                     if action == "choose":
                         ids = request.POST.getlist("champion")
@@ -157,7 +158,9 @@ class PiracyView(LoginRequiredMixin, View):
                                                 min_win_percent=int(request.POST.get("min_win_percent") or 95),
                                                 min_points=int(request.POST.get("min_points") or 10000),
                                                 pair_days=int(request.POST.get("pair_days") or 3),
-                                                rotate_days=int(request.POST.get("rotate_days") or services.ROTATE_DAYS))
+                                                rotate_days=int(request.POST.get("rotate_days") or services.ROTATE_DAYS),
+                                                turn_hour=int(request.POST.get("turn_hour") or services.TURN_HOUR),
+                                                direct_points=int(request.POST.get("direct_points") or services.DIRECT_POINTS))
                     names = ", ".join(c.game_account.name for c in month.champions.select_related("game_account"))
                     record("piracy.month_planned", target=month, target_label=f"{server}: {names}")
                     messages.success(request, f"Campeãs do mês: {names}.")
@@ -168,10 +171,14 @@ class PiracyView(LoginRequiredMixin, View):
                     month.share_every_hours = max(1, min(240, int(request.POST.get("share_every_hours") or 24)))
                     month.min_win_percent = max(50, min(100, int(request.POST.get("min_win_percent") or 95)))
                     month.min_points = max(100, int(request.POST.get("min_points") or 10000))
-                    month.rotate_days = max(1, min(30, int(request.POST.get("rotate_days") or 3)))
-                    month.pair_days = max(1, min(30, int(request.POST.get("pair_days") or 3)))
+                    pair_days = max(1, min(30, int(request.POST.get("pair_days") or 3)))
+                    turn_hour = max(0, min(23, int(request.POST.get("turn_hour") or services.TURN_HOUR)))
+                    if (pair_days, turn_hour) != (month.pair_days, month.turn_hour):
+                        month.turns = {}                 # N-263: the 3-day agenda is drawn again on the new days
+                    month.pair_days, month.turn_hour = pair_days, turn_hour
+                    month.direct_points = max(0, int(request.POST.get("direct_points") or services.DIRECT_POINTS))
                     month.save(update_fields=["share_percent", "share_every_hours", "min_win_percent", "min_points",
-                                              "rotate_days", "pair_days", "updated_at"])
+                                              "pair_days", "turn_hour", "direct_points", "turns", "updated_at"])
                     messages.success(request, "Regras do plano salvas.")
             elif action in ("pause", "resume"):
                 month = services.current_month(server)

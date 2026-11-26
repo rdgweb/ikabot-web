@@ -676,9 +676,13 @@ class HubClient:
             params["points"] = int(points)
         return self._get("/api/agent/piracy/next/", params)
 
-    def report_piracy_route(self, route_id: str, status: str, message: str = "") -> dict:
-        """POST /api/agent/piracy/routes/<id>/ — N-211: sent | done | failed."""
-        return self._post(f"/api/agent/piracy/routes/{route_id}/", {"status": status, "message": message[:250]})
+    def report_piracy_route(self, route_id: str, status: str, message: str = "", seconds: int | None = None) -> dict:
+        """POST /api/agent/piracy/routes/<id>/ — N-211: sent | done | failed. N-263: with "sent", the seconds until the
+        raid lands on its target."""
+        body = {"status": status, "message": message[:250]}
+        if seconds:
+            body["seconds"] = int(seconds)
+        return self._post(f"/api/agent/piracy/routes/{route_id}/", body)
 
     def get_player_marks(self, game_account_id: str) -> dict:
         """GET /api/agent/worldintel/player-marks/ — players the organization marked on that server (N-174/N-175):

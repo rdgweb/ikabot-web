@@ -36,7 +36,9 @@ class PiracyMonth(UUIDTimestampModel):
     rotate_days = models.PositiveSmallIntegerField(default=7)          # origins and passers swap roles every this many days
     turn_at = models.DateTimeField(null=True, blank=True)              # a ranking turn inside the plan: roles swap there too
     pair_days = models.PositiveSmallIntegerField(default=3)            # N-255: the same raider takes from the same account once in this many days
-    turns = models.JSONField(default=dict, blank=True)                 # N-255: the passers chosen for each turn ("1": [ids]) — decided once
+    turns = models.JSONField(default=dict, blank=True)                 # N-263: the 3-day agendas ("block:N": [{champion: passer}])
+    turn_hour = models.PositiveSmallIntegerField(default=14)           # N-263: the plan's day turns at this hour (game's clock)
+    direct_points = models.PositiveIntegerField(default=20000)         # N-263: a champion takes an origin directly from this
     notes = models.TextField(blank=True, default="")
 
     class Meta:
@@ -125,6 +127,7 @@ class PiracyRoute(UUIDTimestampModel):
     due_until = models.DateTimeField()
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=PLANNED, db_index=True)
     sent_at = models.DateTimeField(null=True, blank=True)
+    arrives_at = models.DateTimeField(null=True, blank=True)   # N-263: when the raid lands (the game's time, sent with "sent")
     done_at = models.DateTimeField(null=True, blank=True)
     message = models.CharField(max_length=255, blank=True, default="")
 

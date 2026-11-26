@@ -349,8 +349,39 @@ class PiracyMissionRunner(BaseRunner):
         """How long the game takes to turn that crew into strength (the points leave at once, the crew comes in)."""
         return _to_int(state.get("conversion_time_base"), 0) + _to_int(state.get("conversion_time_per_unit"), 0) * max(0, crew)
 
+    def _convert_checked(self, jid: str, client, city_id: str, crew: int, capture_points: int, factor: int,
+                         state_inputs: dict[str, Any] | None = None) -> int:
+        """N-263: converts and checks the game's answer — the crew really bought (0 when the game took no points: the
+        account was raided just before, 26/11 Carcereiro). The points it is left with go to state_inputs, so the hub
+        never shows points the account no longer has."""
+        answer = client.convert_piracy_points(city_id, crew)
+        answer = answer if isinstance(answer, dict) else {}
+        after = None
+        if _to_int(answer.get("complete_crew_points"), 0) > 0 or _to_int(answer.get("crew_points"), 0) > 0:
+            after = _to_int(answer.get("capture_points"), 0)
+        elif hasattr(client, "get_piracy_state"):
+            try:
+                after = _to_int((client.get_piracy_state(city_id) or {}).get("capture_points"), 0)
+            except Exception as exc:
+                if self.is_network_error(exc):
+                    raise
+                after = None
+        if after is None:
+            return crew                                     # the game said nothing: as asked
+        spent = capture_points - after
+        asked = crew * max(1, factor)
+        if state_inputs is not None:
+            state_inputs["last_capture_points"] = after
+        # a conversion takes exactly what was asked (the state was read seconds before): anything else is a raid
+        if spent <= 0 or abs(spent - asked) > max(2 * factor, asked // 10):
+            self.log(jid, "warn", f"Plano do mês: a conversão não entrou — o jogo tem {after} pontos "
+                                  f"(antes {capture_points}, pedidos {asked})")
+            return 0
+        return max(1, spent // max(1, factor))
+
     def _share_convert(self, jid: str, client, city_id: str, state: dict[str, Any], capture_points: int, percent: int,
-                       crew_cap: int | None = None, plan: dict[str, Any] | None = None) -> int:
+                       crew_cap: int | None = None, plan: dict[str, Any] | None = None,
+                       state_inputs: dict[str, Any] | None = None) -> int:
         """The occasional conversion of an account that keeps its points for the champion — never above the crew the
         hub allows it (its raider must still beat it). N-218: counted on the base crew (strength without the bonus of
         the points held), since when it is raided it holds points again. Returns the crew created."""
@@ -368,12 +399,13 @@ class PiracyMissionRunner(BaseRunner):
             if crew_cap is not None or base_cap is not None:
                 self.log(jid, "info", "Plano do mês: sem conversão — a tripulação já está no máximo para ser roubada pela campeã/passagem")
             return 0
-        client.convert_piracy_points(city_id, crew)
-        self.log(jid, "info", f"Plano do mês: convertidos {crew * factor} pontos em {crew} de tripulação; o resto fica para a campeã")
+        crew = self._convert_checked(jid, client, city_id, crew, capture_points, factor, state_inputs)
+        if crew:
+            self.log(jid, "info", f"Plano do mês: convertidos {crew * factor} pontos em {crew} de tripulação; o resto fica para a campeã")
         return crew
 
     def _floor_convert(self, jid: str, client, city_id: str, state: dict[str, Any], capture_points: int, crew_floor: int,
-                       plan: dict[str, Any] | None = None) -> int:
+                       plan: dict[str, Any] | None = None, state_inputs: dict[str, Any] | None = None) -> int:
         """A passer converts what it lacks to beat its origins. N-218: each 10 points give 1 of crew but take the bonus
         of the points away (below the bonus limit, 2 for every 1): the fewest points that reach the strength, never the
         base above the hub's limit; when no amount reaches it, nothing."""
@@ -394,15 +426,19 @@ class PiracyMissionRunner(BaseRunner):
                 self.log(jid, "info", f"Plano do mês: nem convertendo a tripulação chega a {crew_floor} para roubar as origens "
                                       f"(converter abaixo de {plan.get('bonus_full') or 0} pontos tira bônus)")
             return 0
-        client.convert_piracy_points(city_id, need)
-        self.log(jid, "info", f"Plano do mês: convertidos {need * factor} pontos em {need} de tripulação para conseguir roubar as origens")
+        need = self._convert_checked(jid, client, city_id, need, capture_points, factor, state_inputs)
+        if need:
+            self.log(jid, "info", f"Plano do mês: convertidos {need * factor} pontos em {need} de tripulação para conseguir roubar as origens")
         return need
 
-    def _report_route(self, jid: str, route_id: str, status: str, message: str = "") -> None:
+    def _report_route(self, jid: str, route_id: str, status: str, message: str = "", seconds: int | None = None) -> None:
         if not route_id:
             return
         try:
-            self.hub.report_piracy_route(route_id, status, message)
+            if seconds:
+                self.hub.report_piracy_route(route_id, status, message, seconds=seconds)
+            else:
+                self.hub.report_piracy_route(route_id, status, message)
         except Exception as exc:
             self.log(jid, "warn", f"Plano do mês: falha ao avisar o hub ({status}): {exc}")
 
@@ -1042,7 +1078,8 @@ class PiracyMissionRunner(BaseRunner):
                         destination_island_id=target_island_id,
                     )
                     raid_wait = max(TARGETED_RECHECK, _to_int(raid.get("time_remaining"), 0) + MISSION_BUFFER)
-                    self._report_route(jid, str(inputs.get("_targeted_route_id") or ""), "sent", f"assalto saiu da colônia {temp_city_id}")
+                    self._report_route(jid, str(inputs.get("_targeted_route_id") or ""), "sent", f"assalto saiu da colônia {temp_city_id}",
+                                       seconds=_to_int(raid.get("time_remaining"), 0) // 2)
                     self.save_game_client(game_account_id, client)
                     return RunnerResult(
                         success=True,
@@ -1178,11 +1215,13 @@ class PiracyMissionRunner(BaseRunner):
                         factor = max(1, _to_int(state.get("conversion_factor"), 10))
                         created = min(-(-plan["preconvert_points"] // factor), capture_points // factor)
                         if created > 0:
-                            client.convert_piracy_points(city_id, created)
+                            created = self._convert_checked(jid, client, city_id, created, capture_points, factor, _state_inputs)
+                        if created > 0:
                             self.log(jid, "info", f"Plano do mês: turno de passagem — convertidos {created * factor} pontos em "
                                                   f"{created} de tripulação para vencer {plan.get('preconvert_target') or 'a origem'}")
                     elif plan["crew_floor"] and _to_int(state.get("complete_crew_points"), 0) < plan["crew_floor"] and capture_points > 0:
-                        created = self._floor_convert(jid, client, city_id, state, capture_points, plan["crew_floor"], plan)
+                        created = self._floor_convert(jid, client, city_id, state, capture_points, plan["crew_floor"], plan,
+                                                      _state_inputs)
                     else:
                         next_share = _to_int(inputs.get("_plan_share_next"), 0) or (
                             _to_int(inputs.get("_plan_share_at"), 0) + plan["share_every_hours"] * 3600)
@@ -1193,7 +1232,7 @@ class PiracyMissionRunner(BaseRunner):
                                                      plan["share_percent"] + _to_int(up, 0))
                             if percent > 0:
                                 created = self._share_convert(jid, client, city_id, state, capture_points, percent,
-                                                              plan["crew_cap"], plan)
+                                                              plan["crew_cap"], plan, _state_inputs)
                             _state_inputs["_plan_share_at"] = now_ts
                             _state_inputs["_plan_share_next"] = (now_ts + plan["share_every_hours"] * 3600
                                                                  + random.randint(-3 * 3600, 3 * 3600))
@@ -1217,19 +1256,25 @@ class PiracyMissionRunner(BaseRunner):
                 if converting_until <= now_ts:
                     factor = max(1, _to_int(state.get("conversion_factor"), 10))
                     crew = min(-(-plan_convert // factor), capture_points // factor)
-                    if crew > 0:
-                        client.convert_piracy_points(city_id, crew)
-                        converting_until = now_ts + self._conversion_seconds(state, crew)
+                    created = self._convert_checked(jid, client, city_id, crew, capture_points, factor, _state_inputs) if crew > 0 else 0
+                    if created > 0:
+                        converting_until = now_ts + self._conversion_seconds(state, created)
                         _state_inputs["_plan_convert_until"] = converting_until
-                        self.log(jid, "info", f"Plano do mês: convertidos {crew * factor} pontos em {crew} de tripulação "
+                        self.log(jid, "info", f"Plano do mês: convertidos {created * factor} pontos em {created} de tripulação "
                                               f"para vencer {name}; o roubo sai quando a conversão entrar")
+                    else:
+                        # N-263: nothing came in (no points left, or the game refused): the raid cannot be won now
+                        self._report_route(jid, str(route.get("route_id") or ""), "failed", "conversão não entrou")
+                        route = None
+            if route and plan_convert > 0:
                 wait = max(60, converting_until - now_ts + 60)
-                # N-255: the ship does a mission meanwhile (the biggest that ends about when the conversion does)
+                # N-255: the ship does missions meanwhile — N-263: one after the other (back when each one ends,
+                # never sleeping in port until the conversion is in)
                 fit = _fitting_level(mission_level, fortress_level, wait) if wait >= _MISSION_DURATIONS[1] else None
                 if fit is not None:
                     try:
                         started = client.start_piracy_mission(city_id, fit)
-                        wait = max(wait, _to_int(started.get("time_remaining"), _MISSION_DURATIONS.get(fit, 0)) + MISSION_BUFFER)
+                        wait = _to_int(started.get("time_remaining"), _MISSION_DURATIONS.get(fit, 0)) + MISSION_BUFFER
                         self.log(jid, "info", f"Plano do mês: missão nível {fit} enquanto a conversão entra")
                     except Exception as exc:
                         if self.is_network_error(exc):
@@ -1243,7 +1288,9 @@ class PiracyMissionRunner(BaseRunner):
                 raid = self._direct_raid(jid, client, city_id, route)
                 if raid is not None:
                     route_id = str(route.get("route_id") or "")
-                    self._report_route(jid, route_id, "sent", "assalto direto da fortaleza")
+                    # N-263: the ship lands about halfway through the time it takes to come back
+                    self._report_route(jid, route_id, "sent", "assalto direto da fortaleza",
+                                       seconds=_to_int(raid.get("time_remaining"), 0) // 2)
                     self.log(jid, "info", f"Plano do mês: assalto em {route.get('player_name') or route.get('target_name') or '?'} saiu da fortaleza")
                     self.save_game_client(game_account_id, client)
                     wait = max(TARGETED_RECHECK, _to_int(raid.get("time_remaining"), 0) + MISSION_BUFFER)
