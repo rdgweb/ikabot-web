@@ -87,24 +87,46 @@ function gameDashboard() {
       return compactFormatter.format(Number(n || 0));
     },
 
-    // {text, color}: how the number changed in 24 hours, for the accounts in the filter
+    // {text, color, title}: how the number changed in 24 hours, for the accounts in the filter.
+    // N-242: every case says what it is — no change, a shorter history (a new account), no history yet, or old data.
     kpiTrend(metric) {
       const history = this._dayHistory;
-      if (!history) return { text: '', color: 'transparent' };
+      if (!history) return { text: '', color: 'transparent', title: '' };
+      const cards = this.kpiCards();
+      const now = Date.now();
+      const readAt = cards.map((card) => Date.parse(card.updatedAt)).filter((t) => !Number.isNaN(t));
+      const newest = readAt.length ? Math.max(...readAt) : null;
+      if (newest !== null && now - newest > 2 * 3600 * 1000) {
+        const hours = Math.floor((now - newest) / 3600000);
+        const ago = hours >= 48 ? `${Math.floor(hours / 24)} dias` : `${hours} h`;
+        return { text: `sem leitura há ${ago}`, color: '#a8741a', title: 'Nenhuma conta do filtro foi lida pelo agente nas últimas 2 horas: o número pode estar desatualizado.' };
+      }
       let before = 0;
       let known = 0;
-      this.kpiCards().forEach((card) => {
+      let since = null;                         // the latest start among the accounts: the time really covered
+      cards.forEach((card) => {
         const points = history[String(card.gameAccountId)] || [];
-        if (points.length) {
-          before += Number(points[0][metric] || 0);
-          known += 1;
-        }
+        if (!points.length) return;
+        before += Number(points[0][metric] || 0);
+        known += 1;
+        const first = points.find((point) => !point.before_first) || points[points.length - 1];
+        const start = Date.parse(first.captured_at);
+        if (!Number.isNaN(start) && (since === null || start > since)) since = start;
       });
-      if (!known) return { text: '', color: 'transparent' };
+      const covered = since === null ? 24 : Math.min(24, Math.floor((now - since) / 3600000));
+      if (!known || covered < 1) {
+        return { text: 'sem histórico ainda', color: '#8a7a60', title: 'Ainda não há leituras suficientes para comparar.' };
+      }
+      const label = covered >= 24 ? '24h' : `${covered}h`;
+      const scope = covered >= 24 ? 'nas últimas 24 horas' : `desde a primeira leitura, há ${covered} h`;
       const delta = Math.round(Number(this.kpi[metric] || 0) - before);
-      if (!delta) return { text: '24h  =', color: '#8a7a60' };
+      if (!delta) return { text: `${label}  sem variação`, color: '#8a7a60', title: `Sem variação ${scope}.` };
       const good = delta > 0;
-      return { text: `24h  ${good ? '▲' : '▼'} ${this.compactFmt(Math.abs(delta))}`, color: good ? '#2d7a2d' : '#b3402f' };
+      return {
+        text: `${label}  ${good ? '▲' : '▼'} ${this.compactFmt(Math.abs(delta))}`,
+        color: good ? '#2d7a2d' : '#b3402f',
+        title: `${good ? 'Subiu' : 'Caiu'} ${this.compactFmt(Math.abs(delta))} ${scope}.`,
+      };
     },
 
     syncModalScrollLock(locked) {
@@ -234,6 +256,7 @@ function gameDashboard() {
         gameAccountId: d.gameAccount || '',
         player: d.player || '',
         serverLabel: d.serverLabel || '',
+        updatedAt: d.updated || '',
         cityNames: (d.cityNames || '').split('|').map((name) => name.trim()).filter(Boolean),
         gold: parseInt(d.gold || 0, 10),
         income: parseInt(d.income || 0, 10),

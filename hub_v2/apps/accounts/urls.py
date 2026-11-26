@@ -4,7 +4,7 @@ from .views import (
     DockerHostListView, DockerHostCreateView, DockerHostEditView, DockerHostTokenRotateView,
     NodeListView, NodeDetailView, NodeCreateView, NodeEditView, NodeDeleteView, NodeDeployView,
     NodeToggleView, NodeTokenRotateView, NodeProxyTestView, NodeQueuePurgeView,
-    NodeRequestUpdateView, PlatformNodeCreateView,
+    NodeCancelUpdateView, NodeRequestUpdateView, PlatformNodeCreateView,
     AccountListView, AccountDetailView, AccountCreateView, AccountEditView, AccountDeleteView,
     AccountToggleView,
     GameAccountToggleView,
@@ -36,6 +36,7 @@ urlpatterns = [
     path("nodes/<uuid:pk>/proxy-test/", NodeProxyTestView.as_view(), name="node-proxy-test"),
     path("nodes/<uuid:pk>/purge-queue/", NodeQueuePurgeView.as_view(), name="node-purge-queue"),
     path("nodes/<uuid:pk>/request-update/", NodeRequestUpdateView.as_view(), name="node-request-update"),
+    path("nodes/<uuid:pk>/cancel-update/", NodeCancelUpdateView.as_view(), name="node-cancel-update"),
     # Accounts
     path("", AccountListView.as_view(), name="account-list"),
     path("create/", AccountCreateView.as_view(), name="account-create"),

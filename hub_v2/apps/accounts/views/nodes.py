@@ -13,11 +13,13 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse_lazy
 from django.views import View
+from django.utils import timezone
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
 from core.mixins.views import FilterSortListView
 from apps.settings_app.utils import get_setting
 from ..services.agent_versions import classify_agent_version
+from .. import node_drain
 from ..models import AgentUpdateRequest, DockerHost, Node
 from ..filters import NodeFilter
 from ..forms import DockerHostForm, NodeCreateForm, NodeEditForm
@@ -483,11 +485,25 @@ class NodeDeployView(PlatformNodeGuard, LoginRequiredMixin, DetailView):
         return ctx
 
 
+class NodeCancelUpdateView(PlatformNodeGuard, LoginRequiredMixin, View):
+    """N-261: give up a queued update — the node goes back to taking jobs."""
+
+    def post(self, request, pk):
+        node = get_object_or_404(Node, pk=pk, active=True)
+        cancelled = AgentUpdateRequest.objects.filter(node=node, status="queued").update(
+            status="cancelled", finished_at=timezone.now(), updated_at=timezone.now(),
+            status_message="Cancelada antes de ser aplicada.")
+        if cancelled:
+            messages.success(request, f"Atualização de {node.name} cancelada; o nó voltou a pegar jobs.")
+        else:
+            messages.info(request, "Não havia atualização na fila para este nó.")
+        return redirect("notes:changelog")
+
+
 class NodeRequestUpdateView(PlatformNodeGuard, LoginRequiredMixin, View):
     """Queue a versioned update for one node's scoped updater."""
 
     def post(self, request, pk):
-        from apps.jobs.models import Job
         from apps.notes.services import get_registry_release
 
         node = get_object_or_404(Node, pk=pk, active=True)
@@ -502,8 +518,6 @@ class NodeRequestUpdateView(PlatformNodeGuard, LoginRequiredMixin, View):
             messages.error(request, "Instale ou reconecte o supervisor deste nó antes de atualizar.")
         elif node.agent_version == release.version:
             messages.info(request, f"{node.name} ja esta na versao {release.version}.")
-        elif Job.objects.filter(node=node, status__in=["queued", "running"]).exists():
-            messages.error(request, "A atualização foi bloqueada porque existem jobs em fila ou execução.")
         else:
             with transaction.atomic():
                 Node.objects.select_for_update().get(pk=node.pk)
@@ -522,5 +536,10 @@ class NodeRequestUpdateView(PlatformNodeGuard, LoginRequiredMixin, View):
                         target_version=release.version,
                         target_image=f"{release.repository}@{release.digest}",
                     )
-                    messages.success(request, f"Atualização de {node.name} para v{release.version} solicitada.")
+                    # N-261: never refused for being busy — the node stops taking new jobs and updates when free
+                    busy = node_drain.busy_jobs(node)
+                    messages.success(request, (
+                        f"Atualização de {node.name} para v{release.version} na fila: "
+                        + (f"o nó não pega jobs novos e atualiza assim que {busy} job(s) em andamento terminarem."
+                           if busy else "o nó está livre e atualiza em instantes.")))
         return redirect("notes:changelog")

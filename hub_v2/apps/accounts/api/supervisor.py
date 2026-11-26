@@ -10,8 +10,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts import node_drain
 from apps.accounts.models import AgentUpdateRequest, DockerHost
-from apps.jobs.models import Job
 
 
 def _authenticated_host(request):
@@ -79,7 +79,9 @@ class SupervisorUpdateNextView(APIView):
                 .order_by("created_at")[:10]
             )
             update = next(
-                (item for item in candidates if not Job.objects.filter(node=item.node, status__in=["queued", "running"]).exists()),
+                # N-261: queued jobs wait for the new version; only work in progress holds the update back
+                (item for item in candidates if node_drain.pending_update(item.node) is not None
+                 and node_drain.busy_jobs(item.node) == 0),
                 None,
             )
             if update:
