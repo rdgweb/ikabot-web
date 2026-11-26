@@ -50,7 +50,7 @@
                   hx-trigger="click once"{% else %}type="button" style="cursor: default;"{% endif %}>
             <div class="flex items-center gap-2">
               <span class="font-medium text-ink">{{ item.ga.name|default:item.ga.server_id }}</span>
-              <span class="text-xs text-muted font-mono">{{ item.ga.server_id|world }}</span>
+              <span class="text-xs text-muted font-mono"><span class="ik-pv">{{ item.ga.server_id|world }}</span></span>
             </div>
             <div class="flex items-center gap-2">
               {% if item.is_linked %}

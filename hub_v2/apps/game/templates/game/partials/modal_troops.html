@@ -131,7 +131,7 @@
           <tbody>
             <template x-for="city in strongestTroopCities()" :key="'troop-city-'+city.id">
               <tr>
-                <td class="truncate max-w-[140px]" x-text="city.name"></td>
+                <td class="truncate max-w-[140px] ik-pv" x-text="city.name"></td>
                 <td class="text-right font-mono font-bold" style="color:#c9553e;" x-text="fmt(city.troops)"></td>
                 <td class="text-right font-mono" x-text="fmt(city.resources)"></td>
                 <td class="text-right font-mono" x-text="fmt(city.wine)"></td>

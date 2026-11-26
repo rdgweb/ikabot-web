@@ -8,7 +8,7 @@
     <div class="flex items-center gap-3 border-b px-5 py-3" style="border-color: var(--ik-line);">
       <img src="{% static 'game/city/b/baustelle_statisch.png' %}" alt="" class="h-10 w-12 object-contain">
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-lg font-bold text-ink" x-text="city.name"></h3>
+        <h3 class="truncate text-lg font-bold text-ink ik-pv" x-text="city.name"></h3>
         <div class="text-[11px] text-muted" x-text="gaName"></div>
       </div>
       <button type="button" class="text-muted hover:text-ink" @click="shown = false" aria-label="Fechar"><i class="bi bi-x-lg"></i></button>

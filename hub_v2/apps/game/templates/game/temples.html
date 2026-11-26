@@ -123,7 +123,7 @@
                   style="{% if island.available %}background: rgba(95,140,78,0.14); color: var(--ik-good);{% else %}background: rgba(0,0,0,0.05); color: var(--ik-muted);{% endif %}">
               {% if island.available %}disponível{% else %}indisponível{% endif %}</span>
           </div>
-          <div class="mt-0.5 truncate text-[11px] text-muted">{% if island.island_name %}{{ island.island_name }} · {% endif %}{{ island.server_id|world }}{% if island.level %} · construção {{ island.level }}{% if island.max_level_reached %} (máx){% endif %}{% endif %}</div>
+          <div class="mt-0.5 truncate text-[11px] text-muted">{% if island.island_name %}<span class="ik-pv">{{ island.island_name }}</span> · {% endif %}<span class="ik-pv">{{ island.server_id|world }}</span>{% if island.level %} · construção {{ island.level }}{% if island.max_level_reached %} (máx){% endif %}{% endif %}</div>
         </div>
       </div>
 
@@ -255,7 +255,7 @@
         {% for c in shrine.cities %}
         <div class="flex items-center gap-2 rounded-lg px-2 py-1 text-[12px]" style="background: var(--ik-sand-light);">
           {% with c.tradegood|tradegood_icon as tg %}{% if tg %}<img src="{% static tg %}" alt="" class="h-4 w-4">{% endif %}{% endwith %}
-          <b class="min-w-0 flex-1 truncate text-ink">{{ c.name }}</b>
+          <b class="min-w-0 flex-1 truncate text-ink ik-pv">{{ c.name }}</b>
           {% if c.god %}<span class="inline-flex items-center gap-1"><img src="{% static c.god.image %}" alt="" class="h-4 w-4 object-contain">{{ c.god.name }}</span>{% endif %}
           {% if c.status == "ok" %}<span class="font-mono text-muted">{{ c.bonus }}%</span>
           {% elif c.status == "wrong_good" %}<span class="rounded-full px-1.5 text-[10px] font-semibold" style="background: rgba(187,81,67,0.12); color: var(--ik-bad);">não produz {{ c.god.good }}</span>

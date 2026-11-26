@@ -29,7 +29,7 @@
     </button>
     <i class="bi bi-controller text-xs" style="color: var(--ik-gold);"></i>
     <span class="text-xs font-medium text-ink truncate">{{ game_account.name|default:game_account.server_id }}</span>
-    <span class="text-[10px] text-muted">{{ game_account.server_id|world }}</span>
+    <span class="text-[10px] text-muted"><span class="ik-pv">{{ game_account.server_id|world }}</span></span>
   </div>
 
   {# Action categories — 3 col grid for wider modal #}

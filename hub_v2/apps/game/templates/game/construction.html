@@ -188,7 +188,7 @@
         {% for city in acc.cities %}
         <div class="cb-cc {{ city.state }}">
           <div class="cb-cc-top">
-            <img src="{{ city.tradegood_icon }}" alt=""><b title="{{ city.name }}">{{ city.name }}</b>
+            <img src="{{ city.tradegood_icon }}" alt=""><b class="ik-pv" title="{{ city.name }}">{{ city.name }}</b>
             <span class="cb-pill {{ city.state }}">{{ city.state_label }}</span>
           </div>
           {% if city.work %}
@@ -263,7 +263,7 @@
       <div class="cb-note" style="border-left-color: #a9a294;">
         <h4>{{ acc.name }} <small>· {{ acc.counts.total }} cidade{{ acc.counts.total|pluralize }} sem obra e sem plano{% if acc.counts.free_slots %} · {{ acc.counts.free_slots }} espaço{{ acc.counts.free_slots|pluralize }} livre{{ acc.counts.free_slots|pluralize }}{% endif %}</small></h4>
         <div class="cb-row">
-          {% for city in acc.cities %}<span class="cb-chip"><img src="{{ city.tradegood_icon }}" alt="">{{ city.name }}</span>{% endfor %}
+          {% for city in acc.cities %}<span class="cb-chip"><img src="{{ city.tradegood_icon }}" alt=""><span class="ik-pv">{{ city.name }}</span></span>{% endfor %}
         </div>
         <div class="cb-row" style="margin-top: .55rem;">
           <button type="button" class="cb-btn"
@@ -277,7 +277,7 @@
       <div class="cb-note" style="border-left-color: #a9a294;">
         <h4>Fora do plano <small>· {{ idle_strays|length }} cidade{{ idle_strays|length|pluralize }} sem obra, em conta que tem plano</small></h4>
         <div class="cb-row">
-          {% for city in idle_strays %}<span class="cb-chip" title="{{ city.ga_name }}"><img src="{{ city.tradegood_icon }}" alt="">{{ city.name }} <code>{{ city.ga_name }}</code></span>{% endfor %}
+          {% for city in idle_strays %}<span class="cb-chip" title="{{ city.ga_name }}"><img src="{{ city.tradegood_icon }}" alt=""><span class="ik-pv">{{ city.name }} <code>{{ city.ga_name }}</code></span></span>{% endfor %}
         </div>
       </div>
       {% endif %}

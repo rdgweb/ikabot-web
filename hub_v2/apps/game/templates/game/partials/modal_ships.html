@@ -135,7 +135,7 @@
           <tbody>
             <template x-for="city in strongestFleetCities()" :key="'ship-city-'+city.id">
               <tr>
-                <td class="truncate max-w-[140px]" x-text="city.name"></td>
+                <td class="truncate max-w-[140px] ik-pv" x-text="city.name"></td>
                 <td class="text-right font-mono font-bold gm-text-sea" x-text="fmt(city.ships)"></td>
                 <td class="text-right font-mono" x-text="fmt(city.resources)"></td>
                 <td class="text-right font-mono" x-text="city.logistics"></td>
