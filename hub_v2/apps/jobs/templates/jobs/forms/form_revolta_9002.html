@@ -106,7 +106,7 @@
                           <div class="truncate text-sm font-semibold text-ink">{{ city.name|default:"Cidade" }}</div>
                           <div class="mt-1 text-[11px] text-muted">
                             {{ city.tradegood_name }}
-                            {% if city.x and city.y %}<span> • [{{ city.x }}:{{ city.y }}]</span>{% endif %}
+                            {% if city.x and city.y %}<span> • <span class="ik-pv">[{{ city.x }}:{{ city.y }}]</span></span>{% endif %}
                           </div>
                         </div>
                         <span class="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors"

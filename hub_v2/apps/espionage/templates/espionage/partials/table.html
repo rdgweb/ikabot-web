@@ -116,7 +116,7 @@
               <a class="hover:text-sea hover:underline" href="{% url 'worldintel:city-detail' %}?dump={{ report.intel_dump }}&city_id={{ report.target_city_id|urlencode }}">{{ report.target_city_name|default:report.target_city_id }}</a>
               {% else %}{{ report.target_city_name|default:"" }}{% endif %}
               {% if report.target_x is not None %}<a class="font-mono hover:text-sea hover:underline" title="Jogadores desta ilha em Inteligência"
-                 href="{% url 'worldintel:players' %}?dump={{ report.intel_dump }}&q={{ report.target_x }}:{{ report.target_y }}">[{{ report.target_x }}:{{ report.target_y }}]</a>{% endif %}
+                 href="{% url 'worldintel:players' %}?dump={{ report.intel_dump }}&q={{ report.target_x }}:{{ report.target_y }}"><span class="ik-pv">[{{ report.target_x }}:{{ report.target_y }}]</span></a>{% endif %}
             </div>
           </td>
 

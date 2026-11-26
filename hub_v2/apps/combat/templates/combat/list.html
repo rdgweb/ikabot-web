@@ -61,7 +61,7 @@
     {% for group in outgoing.raids %}
     <div class="cbt-out-card{% if group.rows|length > 1 %} wide{% endif %}">
       <div class="cbt-out-head">
-        <div class="min-w-0"><b>{{ group.name }}</b> <small class="font-mono">[{{ group.coords }}]</small><br><small>{{ group.owner }} · saque com {{ group.rows|length }} conta{{ group.rows|length|pluralize }}</small></div>
+        <div class="min-w-0"><b>{{ group.name }}</b> <small class="font-mono"><span class="ik-pv">[{{ group.coords }}]</span></small><br><small>{{ group.owner }} · saque com {{ group.rows|length }} conta{{ group.rows|length|pluralize }}</small></div>
         {% if group.first %}<span class="eta" title="primeira chegada" data-eta="{{ group.first }}">—</span>{% endif %}
       </div>
       <div class="cbt-out-rows">

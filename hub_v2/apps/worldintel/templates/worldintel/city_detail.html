@@ -45,7 +45,7 @@
         <div class="flex items-center gap-2 mb-1 flex-wrap">
           <i class="bi bi-building text-sea text-lg"></i>
           <h1 class="text-xl font-bold text-ink">{{ city.name }}</h1>
-          <span class="font-mono text-muted text-sm">[{{ city.island.x }}:{{ city.island.y }}]</span>
+          <span class="font-mono text-muted text-sm"><span class="ik-pv">[{{ city.island.x }}:{{ city.island.y }}]</span></span>
           {% if city.in_fight %}
             <span class="badge badge-danger">⚔️ Em batalha</span>
           {% elif city.state == "vacation" %}
