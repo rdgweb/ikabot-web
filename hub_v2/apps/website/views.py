@@ -11,6 +11,7 @@ from django.core.validators import validate_email
 from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.utils import timezone
+from django.utils.cache import patch_vary_headers
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
@@ -112,8 +113,14 @@ class SitePageView(View):
         elif page == "signup":
             extra = {"t": C.SIGNUP[lang], "sent": request.GET.get("ok") == "1"}
         template = f"website/legal/{page}_{lang}.html" if page in C.LEGAL_PAGES else f"website/{page}.html"
-        return render(request, template, _context(request, lang, page, **extra),
-                      status=400 if page == 'pricing' and form.is_bound and not form.is_valid() else 200)
+        partial = page == 'pricing' and request.headers.get('HX-Request') == 'true'
+        if partial:
+            template = 'website/partials/estimate_result.html'
+        response = render(request, template, _context(request, lang, page, **extra),
+                          status=400 if page == 'pricing' and not partial and form.is_bound and not form.is_valid() else 200)
+        if page == 'pricing':
+            patch_vary_headers(response, ['HX-Request'])
+        return response
 
 
 class InviteRequestView(View):

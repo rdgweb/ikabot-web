@@ -22,9 +22,12 @@ with override_settings(SITE_URL='http://offer.test', UMAMI_URL='', UMAMI_WEBSITE
         'default': {},
         'six': {'estimate': '1', 'active_subaccounts': '6', 'lobbies': '6', 'platform_agents': '6', 'platform_proxies': '6'},
         'invalid': {'estimate': '1', 'active_subaccounts': '4', 'lobbies': '1', 'platform_agents': '2', 'platform_proxies': '0'},
+        'one': {'estimate': '1', 'active_subaccounts': '6', 'lobbies': '6', 'platform_agents': '1', 'platform_proxies': '1'},
+        'empty': {'estimate': '1', 'active_subaccounts': '6', 'lobbies': '6', 'platform_agents': '1', 'platform_proxies': ''},
     }
     for key, values in cases.items():
         pages[key] = client.get('/pt/precos/', values).content.decode()
+        pages[key + '_partial'] = client.get('/pt/precos/', values, HTTP_HX_REQUEST='true').content.decode()
     pages['english'] = client.get('/en/pricing/', cases['six']).content.decode()
     pages['signup'] = client.get('/pt/cadastro/').content.decode()
     set_billing_open(True)

@@ -1,0 +1,10 @@
+{% if estimate %}
+<dl class="cost-breakdown"><dt>{{ offer.base }} · {{ offer.up_to }} {{ estimate.limit }} {{ offer.characters }}</dt><dd>{{ estimate.base }}</dd>
+  <dt>{{ offer.agents }}</dt><dd>{{ estimate.agents }}</dd><dt>{{ offer.proxies }}</dt><dd>{{ estimate.proxies }}</dd></dl>
+<p style="font-size: 1.8rem; color: var(--brown); font-weight: 800;">{{ estimate.total }}<small style="font-size: .9rem;">{{ offer.per_month }}</small></p>
+{% else %}
+<div class="error" role="alert">
+  {% for field in estimate_form %}{% for error in field.errors %}<p>{{ field.label }}: {{ error }}</p>{% endfor %}{% endfor %}
+  {% for error in estimate_form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+</div>
+{% endif %}

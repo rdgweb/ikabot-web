@@ -64,20 +64,21 @@
   <div class="wrap split">
     <div class="card">
       <h2 style="margin-top: 0;">{{ offer.simulate }}</h2>
-      <form class="form" method="get" action="#estimate">
+      <form id="estimate-form" class="form" method="get" action="{{ links.pricing }}#estimate"
+            hx-get="{{ links.pricing }}" hx-trigger="input changed delay:300ms, change, submit"
+            hx-target="#estimate-result" hx-swap="innerHTML show:none" hx-sync="this:replace"
+            hx-indicator="#estimate-loading" hx-request='{"timeout":10000}' novalidate>
         <input type="hidden" name="estimate" value="1">
-        {{ estimate_form.non_field_errors }}
-        {% for field in estimate_form %}<div style="margin-bottom: 14px;"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
-        <button class="btn btn-primary" type="submit">{{ offer.calculate }}</button>
+        {% for field in estimate_form %}<div style="margin-bottom: 14px;"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}</div>{% endfor %}
+        <p class="note">{{ offer.automatic }}</p>
+        <noscript><button class="btn btn-primary" type="submit">{{ offer.calculate }}</button></noscript>
       </form>
     </div>
-    <div class="card" aria-live="polite">
-      {% if estimate %}
+    <div class="card">
       <h3 style="margin-top: 0;">{{ offer.total }}</h3>
-      <dl class="cost-breakdown"><dt>{{ offer.base }} · {{ offer.up_to }} {{ estimate.limit }} {{ offer.characters }}</dt><dd>{{ estimate.base }}</dd>
-        <dt>{{ offer.agents }}</dt><dd>{{ estimate.agents }}</dd><dt>{{ offer.proxies }}</dt><dd>{{ estimate.proxies }}</dd></dl>
-      <p style="font-size: 1.8rem; color: var(--brown); font-weight: 800;">{{ estimate.total }}<small style="font-size: .9rem;">{{ offer.per_month }}</small></p>
-      {% endif %}
+      <div class="estimate-status"><span id="estimate-loading" class="htmx-indicator" role="status">{{ offer.updating }}</span></div>
+      <p id="estimate-network-error" class="error" role="alert" hidden>{{ offer.update_error }}</p>
+      <div id="estimate-result" aria-live="polite" aria-atomic="true">{% include "website/partials/estimate_result.html" %}</div>
       <p class="note">{{ offer.estimate_note }}</p>
       {% for name, description in offer.glossary %}<p><b>{{ name }}</b><br>{{ description }}</p>{% endfor %}
     </div>
@@ -86,4 +87,8 @@
 <div class="wrap center" style="margin-bottom: 36px;">
   <a class="btn btn-primary" href="{{ cta.href }}"><i class="bi {{ cta.icon }}"></i> {{ cta.label }}</a>
 </div>
+{% endblock %}
+{% block scripts %}
+<script defer src="/static/vendor/htmx.min.js"></script>
+<script defer src="/static/website/estimate.js?v=0.9.3"></script>
 {% endblock %}

@@ -62,6 +62,20 @@ class PublicOfferTests(TestCase):
             response = self.client.get('/pt/precos/', {**values, 'platform_agents': '0', key: bad})
             self.assertEqual(response.status_code, 400)
 
+    def test_htmx_returns_only_the_updated_result_and_validation_errors(self):
+        values = {'estimate': '1', 'active_subaccounts': '6', 'lobbies': '6', 'platform_agents': '6', 'platform_proxies': '6'}
+        for lang in ('pt', 'en'):
+            url = content.path_of(lang, 'pricing')
+            response = self.client.get(url, values, HTTP_HX_REQUEST='true')
+            self.assertContains(response, 'R$ 148,70')
+            self.assertNotContains(response, '<html')
+            self.assertNotContains(response, '<form')
+            self.assertIn('HX-Request', response.headers['Vary'])
+            invalid = self.client.get(url, {**values, 'platform_proxies': ''}, HTTP_HX_REQUEST='true')
+            self.assertContains(invalid, 'role="alert"')
+            self.assertNotContains(invalid, 'R$')
+            self.assertIn('HX-Request', self.client.get(url).headers['Vary'])
+
     def test_signup_and_closed_beta_keep_prices_separate_from_actual_payment(self):
         set_billing_open(False)
         page = self.client.get('/pt/cadastro/')
