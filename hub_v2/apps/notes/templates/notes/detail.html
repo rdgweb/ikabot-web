@@ -24,7 +24,7 @@
     </div>
     <h1 class="text-2xl font-bold text-ink"><span class="font-mono text-lg text-muted">{{ note.code }}</span> {{ note.title }}</h1>
   </div>
-  <div class="flex items-center gap-2">
+  <div class="ik-responsive-actions flex items-center gap-2">
     <a href="{% url 'notes:list' %}" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar</a>
     <a href="{% url 'notes:edit' note.pk %}" class="btn btn-secondary btn-sm"><i class="bi bi-pencil"></i> Editar</a>
     {% if note.status == "authorized" %}

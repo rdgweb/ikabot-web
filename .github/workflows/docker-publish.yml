@@ -135,7 +135,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/browser-tests" --no-save playwright@1.58.2
           export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
           node "$NODE_PATH/playwright/cli.js" install --with-deps chromium
-          node --test .github/scripts/test_agent_update_confirmation.cjs .github/scripts/test_access_interface.cjs .github/scripts/test_offer_interface.cjs .github/scripts/test_support_interface.cjs
+          node --test .github/scripts/test_agent_update_confirmation.cjs .github/scripts/test_access_interface.cjs .github/scripts/test_offer_interface.cjs .github/scripts/test_support_interface.cjs .github/scripts/test_mobile_interface.cjs
 
   build:
     needs: validate

@@ -35,3 +35,51 @@
   .sidebar-logo { position: relative; overflow: hidden; }
   .ik-side-streak { position: absolute; right: -10px; top: 0; width: 150px; height: 100%; pointer-events: none; opacity: .55; }
 </style>
+<style>
+  #sidebar-toggle { display: none; }
+  .sidebar-backdrop[hidden] { display: none !important; }
+  .sidebar-backdrop { position: fixed; inset: 0; z-index: 75; background: rgba(31,27,21,.48); border: 0; padding: 0; }
+  .sidebar a:focus-visible, .sidebar button:focus-visible, #sidebar-toggle:focus-visible { outline: 2px solid #dfb563; outline-offset: -3px; }
+  @media (max-width: 1023.98px) {
+    .main-content, body.sidebar-collapsed .main-content { margin-left: 0; }
+    .sidebar { width: min(18rem, calc(100vw - 3rem)); height: 100dvh; max-height: 100dvh; transform: translateX(-110%); visibility: hidden; transition: transform .22s ease, visibility .22s; z-index: 80; box-shadow: 8px 0 30px rgba(0,0,0,.2); }
+    body.sidebar-mobile-open { overflow: hidden; }
+    body.sidebar-mobile-open .sidebar { transform: translateX(0); visibility: visible; }
+    .sidebar nav { overscroll-behavior: contain; }
+    .sidebar-item { min-height: 44px; }
+    .sidebar-toggle-btn { right: 10px; top: 12px; width: 44px; height: 44px; border-radius: 12px; }
+    .sidebar-logo { padding-right: 62px; }
+    #sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; }
+    .topbar { gap: 8px; padding-inline: 12px; }
+    .topbar > div:first-child { min-width: 0; gap: 6px; }
+    .topbar nav { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topbar-actions { flex-shrink: 0; }
+    .topbar-actions > .btn, .topbar-actions .ik-bell-btn { min-height: 44px; min-width: 44px; }
+    .ik-responsive-header { flex-wrap: wrap; gap: 12px; }
+    .ik-responsive-header > div, .ik-responsive-actions, .ik-responsive-actions > *, #main-area .grid > * { min-width: 0; max-width: 100%; }
+    .ik-responsive-actions, .ik-responsive-actions > .flex { flex-wrap: wrap; }
+    .ik-responsive-header h1, .ik-responsive-header p { overflow-wrap: anywhere; }
+    #main-area h1, #main-area h2, #main-area h3 { overflow-wrap: anywhere; }
+    #main-area select, #main-area textarea, #main-area input:not([type="checkbox"]):not([type="radio"]) { min-width: 0; max-width: 100%; }
+    #main-area pre { max-width: 100%; overflow-x: auto; }
+    .ik-table-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+    .filter-panel { position: fixed !important; inset: 88px 12px auto !important; width: auto !important; min-width: 0 !important; max-width: none !important; max-height: calc(100dvh - 104px); overflow-y: auto; z-index: 65; }
+  }
+  @media (max-width: 639.98px) {
+    .topbar { align-items: flex-start; }
+    .topbar > div:first-child { flex: 1; padding-top: 0; }
+    .topbar-actions { display: grid; grid-template-columns: repeat(3, 44px); gap: 4px; }
+    .topbar-actions > .btn { width: 44px; padding: 6px; justify-content: center; }
+    .topbar-actions > .btn span { display: none; }
+    .topbar-actions .ik-bell-btn { width: 44px; }
+    .topbar-local-clock { display: none; }
+    .topbar-game-clock { grid-column: 1 / -1; text-align: right; font-size: 11px; white-space: nowrap; }
+    #main-area { padding: 16px 12px; }
+    #main-area .org-panel h3 { flex-wrap: wrap; }
+    #main-area .cb-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+    #main-area [data-panel-filters], #main-area .flex-shrink-0 { min-width: 0; max-width: 100%; }
+    #main-area .dash-chip { max-width: 100%; white-space: normal; flex-wrap: wrap; overflow-wrap: anywhere; }
+    #main-area .dash-chip > * { min-width: 0; max-width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+</style>

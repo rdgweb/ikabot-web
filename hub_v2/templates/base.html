@@ -34,6 +34,8 @@
 
   {% if user.is_authenticated %}
   {% include "components/sidebar.html" %}
+  <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" tabindex="-1"
+          onclick="closeSidebar()" aria-label="Fechar menu de navegação" hidden></button>
   {% endif %}
 
   <div class="{% if user.is_authenticated %}main-content{% endif %}">
@@ -60,7 +62,7 @@
   {% include "components/job_modal.html" %}
   {% endif %}
 
-  <script src="{% static 'js/app.js' %}"></script>
+  <script src="{% static 'js/app.js' %}?v={{ HUB_VERSION }}"></script>
   <!-- N-101: os componentes do Painel do Jogo ficam no layout. A navegacao pelo menu troca so o
        miolo da pagina, e o Alpine inicia o conteudo novo antes de um script externo vindo junto
        terminar de carregar ("gameDashboard is not defined" ate um F5). Aqui eles ja existem. -->

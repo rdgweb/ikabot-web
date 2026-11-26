@@ -64,7 +64,7 @@
       Também configura o limite de execuções visíveis por workflow (as mais antigas são arquivadas automaticamente).
       Workflows arquivados ficam ocultos da lista principal mas podem ser consultados/restaurados.
     </p>
-    <form method="post" action="{% url 'settings_app:auto-archive-workflows' %}" class="flex items-end gap-3">
+    <form method="post" action="{% url 'settings_app:auto-archive-workflows' %}" class="ik-responsive-actions flex items-end gap-3">
       {% csrf_token %}
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Inatividade mínima (dias)</label>
@@ -80,7 +80,7 @@
       </span>
     </form>
     <div class="mt-4 pt-4" style="border-top: 1px solid var(--ik-line);">
-      <form method="post" action="{% url 'settings_app:save-max-runs' %}" class="flex items-end gap-3">
+      <form method="post" action="{% url 'settings_app:save-max-runs' %}" class="ik-responsive-actions flex items-end gap-3">
         {% csrf_token %}
         <div>
           <label class="block text-xs font-medium text-muted mb-1">Máximo de execuções por workflow</label>

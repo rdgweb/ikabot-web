@@ -74,7 +74,7 @@ test('Access pages render searches, roles, provenance and explicit confirmation'
         await page.setViewportSize({width:390,height:844});
         await page.waitForFunction(()=>document.body.scrollWidth <= innerWidth,null,{timeout:3000});
         assert.equal(await page.locator('body').evaluate(el=>el.scrollWidth > innerWidth),false,name+' mobile');
-        const menu = page.getByRole('button',{name:'Abrir menu de navegação',exact:true});
+        const menu = page.locator('#sidebar-toggle');
         await menu.click();
         assert.equal(await menu.getAttribute('aria-expanded'),'true');
         await page.keyboard.press('Escape');

@@ -9,14 +9,14 @@
 
 {% block content %}
 <div x-data="marketOrderModal()" class="space-y-6">
-  <div class="flex items-center justify-between gap-4">
+  <div class="ik-responsive-header flex items-center justify-between gap-4">
     <div>
       <h1 class="text-xl font-bold text-ink flex items-center gap-2">
         <i class="bi bi-shop text-sea"></i> Mercado Interno
       </h1>
       <p class="mt-0.5 text-sm text-muted">Ordens, participantes e cadeia de compra/venda entre contas.</p>
     </div>
-    <div class="flex flex-shrink-0 items-center gap-2">
+    <div class="ik-responsive-actions flex flex-shrink-0 items-center gap-2">
       <a href="{% url 'market:balance' %}" class="btn btn-secondary btn-sm" title="O que as contas venderam e compraram entre si, e o ouro que ficou com cada uma">
         <i class="bi bi-cash-coin"></i> Balanço
       </a>

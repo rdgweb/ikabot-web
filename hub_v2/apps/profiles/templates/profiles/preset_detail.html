@@ -5,7 +5,7 @@
 
 {% block content %}
 {# ── Header ─────────────────────────────────────────────────────────────────── #}
-<div class="mb-6 flex items-start justify-between gap-4">
+<div class="ik-responsive-header mb-6 flex items-start justify-between gap-4">
   <div x-data="{ editing: false, name: '{{ preset.name|escapejs }}', desc: '{{ preset.description|escapejs }}' }">
     <nav class="text-xs text-muted flex items-center gap-1 mb-1">
       <a href="{% url 'profiles:profile-list' %}" class="hover:text-ink">Perfis</a>
@@ -48,7 +48,7 @@
     </div>
   </div>
 
-  <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
+  <div class="ik-responsive-actions flex flex-wrap items-center justify-end gap-2 shrink-0">
     {# N-142: show it in Ações do Jogo, in a category, ready to run #}
     <form method="post" action="{% url 'profiles:preset-catalog' preset.pk %}" class="flex items-center gap-1.5 text-[12px] text-muted"
           title="Mostrar este preset em Ações do Jogo, pronto para executar">

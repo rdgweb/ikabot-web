@@ -1,12 +1,12 @@
 {% load static %}
-<aside class="sidebar" id="main-sidebar">
+<aside class="sidebar" id="main-sidebar" aria-label="Menu principal">
 
   {# Toggle button #}
-  <button onclick="toggleSidebar()"
+  <button type="button" onclick="toggleSidebar()"
           id="sidebar-toggle-btn"
           class="sidebar-toggle-btn"
-          title="Recolher/Expandir menu">
-    <i class="bi bi-chevron-left sidebar-toggle-icon"></i>
+          title="Recolher menu" aria-label="Recolher menu" aria-controls="main-sidebar" aria-expanded="true">
+    <i class="bi bi-chevron-left sidebar-toggle-icon" aria-hidden="true"></i>
   </button>
 
   {# Logo #}
@@ -31,9 +31,10 @@
       {% for item in section.items %}
       <a href="{{ item.url }}"
          title="{{ item.name }}"
+         aria-label="{{ item.name }}"
          class="sidebar-item"
          hx-boost="{% if item.full_page %}false{% else %}true{% endif %}">
-        <i class="bi {{ item.icon }} flex-shrink-0"></i>
+        <i class="bi {{ item.icon }} flex-shrink-0" aria-hidden="true"></i>
         <span class="sidebar-collapsible">{{ item.name }}</span>
       </a>
       {% endfor %}

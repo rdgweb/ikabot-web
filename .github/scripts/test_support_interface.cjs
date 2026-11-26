@@ -56,7 +56,6 @@ test('customer opens, follows and resolves support tickets on desktop and mobile
     const {browser,page,state}=await setup(width);
     try{
       await page.goto('http://support.test/suporte/');
-      if(width<800)await page.locator('#sidebar-toggle-btn').click();
       await page.getByRole('link',{name:'Abrir chamado',exact:true}).click();
       await page.getByLabel('Assunto',{exact:true}).fill('Ajuda com conexão do agente');
       await page.getByLabel('Categoria',{exact:true}).selectOption('agent');

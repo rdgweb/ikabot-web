@@ -56,7 +56,7 @@
     </div>
     <div class="p-4">
       {% if last_backup %}<div class="text-sm mb-3"><span style="display:inline-block;padding:.05rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;color:#fff;background:{% if last_backup.status == 'ok' %}#5f8c4e{% elif last_backup.status == 'failed' %}#b04a3a{% elif last_backup.status == 'running' %}var(--ik-sea){% else %}#7a7264{% endif %};">{{ last_backup.label }}</span> {{ last_backup.detail }}</div>{% endif %}
-      <table class="data-table w-full text-sm">
+      <div class="ik-table-scroll"><table class="data-table w-full text-sm">
         <thead><tr><th>Arquivo</th><th>Tamanho</th><th></th></tr></thead>
         <tbody>
         {% for b in backups %}
@@ -64,7 +64,7 @@
             <td class="text-right"><a class="link-sea" hx-boost="false" href="{% url 'settings_app:maintenance-backup' b.name %}"><i class="bi bi-download"></i></a></td></tr>
         {% empty %}<tr><td colspan="3" class="text-muted">Nenhum</td></tr>{% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </div>
   </section>
 
@@ -78,7 +78,7 @@
     </div>
     <div class="p-4">
       {% if last_optimize %}<div class="text-sm mb-3"><span style="display:inline-block;padding:.05rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;color:#fff;background:{% if last_optimize.status == 'ok' %}#5f8c4e{% elif last_optimize.status == 'failed' %}#b04a3a{% elif last_optimize.status == 'running' %}var(--ik-sea){% else %}#7a7264{% endif %};">{{ last_optimize.label }}</span> {{ last_optimize.detail }}</div>{% endif %}
-      <table class="data-table w-full text-sm">
+      <div class="ik-table-scroll"><table class="data-table w-full text-sm">
         <thead><tr><th>Tabela</th><th>Tamanho</th><th>Livre dentro</th></tr></thead>
         <tbody>
         {% for t in tables %}
@@ -86,7 +86,7 @@
             <td>{{ t.free|filesizeformat }}</td></tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </div>
   </section>
 </div>
@@ -114,7 +114,7 @@
 <section class="card">
   <div class="card-header"><h2 class="font-semibold"><i class="bi bi-clock-history"></i> Execuções</h2></div>
   <div class="p-4">
-    <table class="data-table w-full text-sm">
+    <div class="ik-table-scroll"><table class="data-table w-full text-sm">
       <thead><tr><th>Quando</th><th>O quê</th><th>Origem</th><th>Resultado</th><th></th></tr></thead>
       <tbody>
       {% for r in history %}
@@ -123,7 +123,7 @@
           <td><span style="display:inline-block;padding:.05rem .5rem;border-radius:999px;font-size:.7rem;font-weight:700;color:#fff;background:{% if r.status == 'ok' %}#5f8c4e{% elif r.status == 'failed' %}#b04a3a{% elif r.status == 'running' %}var(--ik-sea){% else %}#7a7264{% endif %};">{{ r.label }}</span></td><td>{{ r.detail }}</td></tr>
       {% empty %}<tr><td colspan="5" class="text-muted">Nenhuma</td></tr>{% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </div>
 </section>
 {% endblock %}
