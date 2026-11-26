@@ -2,7 +2,7 @@
 <div class="flex items-start justify-between gap-3 mb-3">
   <div class="min-w-0">
     <div class="text-[10px] uppercase tracking-wide text-muted">Ilha</div>
-    <div class="text-base font-bold text-ink truncate">{{ island.name|default:"—" }} <span class="font-mono text-sm text-muted">[{{ island.x }}:{{ island.y }}]</span></div>
+    <div class="text-base font-bold text-ink truncate">{{ island.name|default:"—" }} <span class="font-mono text-sm text-muted"><span class="ik-pv">[{{ island.x }}:{{ island.y }}]</span></span></div>
     <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
       {% if island.resource_name %}<span><i class="bi bi-gem text-[10px]"></i> {{ island.resource_name }}{% if island.resource_level %} Nv {{ island.resource_level }}{% endif %}</span>{% endif %}
       {% if island.miracle_name %}<span><i class="bi bi-stars text-[10px]"></i> {{ island.miracle_name }}{% if island.miracle_level %} Nv {{ island.miracle_level }}{% endif %}</span>{% endif %}

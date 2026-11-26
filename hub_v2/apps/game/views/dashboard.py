@@ -25,6 +25,7 @@ from apps.game.services.dashboard_cache import get_dashboard_cache_key
 from apps.game.services.kpi_history import build_history_map, clean_period
 from apps.game.services.gold import gold_income, net_gold_income
 from apps.game.services.vacation import read_vacation_state
+from apps.game.services.transit import units_in_transit
 from apps.jobs.models import ConstructionResourceReservation
 
 logger = logging.getLogger(__name__)
@@ -372,6 +373,12 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     for row in ec["fleet_rows"]:
                         row["counts"] = [row["unit_map"].get(name, 0) for name in fleet_columns]
 
+                # N-140: troops and warships on their way are in no garrison — counted apart, and in the totals
+                transit = units_in_transit(base)
+                garrison_troops, garrison_ships = troop_total, ship_total
+                troop_total += transit["troops"]
+                ship_total += transit["ships"]
+
                 # --- KPIs ---
                 acct_gold = _si(base.get("gold"))
                 # N-76: one rule for the net income (see apps.game.services.gold)
@@ -438,6 +445,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                     "ships": ships_list,
                     "troop_total": troop_total,
                     "ship_total": ship_total,
+                    "garrison_troops": garrison_troops,
+                    "garrison_ships": garrison_ships,
+                    "transit": transit,
                     "troop_columns": [
                         {"name": name, "total": sum(row["unit_map"].get(name, 0) for city in enriched_cities for row in city.get("troop_rows", []))}
                         for name in troop_columns

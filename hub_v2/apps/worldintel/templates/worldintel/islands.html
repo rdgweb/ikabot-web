@@ -111,7 +111,7 @@
         <tbody>
           {% for island in islands %}
           <tr class="hover:bg-[var(--ik-sand-light)] transition-colors" style="border-bottom:1px solid var(--ik-line);">
-            <td class="py-2 px-3 font-mono font-semibold text-ink">[{{ island.x }}:{{ island.y }}]</td>
+            <td class="py-2 px-3 font-mono font-semibold text-ink"><span class="ik-pv">[{{ island.x }}:{{ island.y }}]</span></td>
             <td class="py-2 px-3 text-ink">{{ island.name|default:"—" }}</td>
             <td class="py-2 px-3 text-muted">{{ island.resource_name|default:"—" }}</td>
             <td class="py-2 px-3 text-muted">{{ island.miracle_name|default:"—" }}</td>

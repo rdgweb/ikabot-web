@@ -19,7 +19,7 @@ from core.runner_registry import register_runner
 from game_client.parsers.html_parser import GamePageParser
 from runners.base import BaseRunner, RunnerResult
 from sessions.game_session_service import LoginCooldownActive
-from services.combat_watch import next_own_attack_arrival, watch_combats
+from services.combat_watch import next_own_attack_arrival, own_units_in_transit, watch_combats
 from services.resource_transport import estimate_incoming_transport_wait_seconds
 from services.wine_tavern import (
     find_tavern_position,
@@ -178,6 +178,7 @@ class AlertAttacksRunner(BaseRunner):
             hostile_count = len(hostile_movements)
             # N-149: a pirate raid is told apart from an attack (the hub shows and handles them differently)
             pirate_count = sum(1 for item in hostile_movements if self._movement_to_event(item, scan["time_now"])["kind"] == "pirate")
+            in_transit = own_units_in_transit(scan["movements"], scan["time_now"])     # N-140
 
             matching_events = []
             new_events = []
@@ -226,6 +227,7 @@ class AlertAttacksRunner(BaseRunner):
                 seen_map=seen_map,
                 notified_map=notified_map,
                 combat_watch=combat_watch,
+                in_transit=in_transit,
             )
 
             self.log(
@@ -269,6 +271,7 @@ class AlertAttacksRunner(BaseRunner):
                     seen_map=seen_map,
                     notified_map=notified_map,
                     combat_watch=combat_watch,
+                    in_transit=in_transit,
                 )
 
             if ga_id:
@@ -432,10 +435,12 @@ class AlertAttacksRunner(BaseRunner):
         seen_map: dict[str, int],
         notified_map: dict[str, int],
         combat_watch: dict[str, Any] | None = None,
+        in_transit: list[dict[str, Any]] | None = None,
     ) -> None:
         base_snapshot = dict((snapshot or {}).get("base_snapshot") or {})
         base_snapshot["attack_alert_state"] = {
             "combat_watch": combat_watch or {},
+            "own_in_transit": list(in_transit or []),      # N-140: troops and warships of one's own on their way
             "interval_minutes": int(interval_minutes),
             "checked_at": datetime.now(timezone.utc).isoformat(),
             "total_movements": int(total_movements),

@@ -16,6 +16,7 @@ from django.utils import timezone
 
 from apps.game.models import AccountSnapshotHistory, AccountHistoryMetric
 from apps.game.services.gold import net_gold_income
+from apps.game.services.transit import units_in_transit
 
 # period -> (how far back, distance between points)
 PERIODS = {
@@ -120,13 +121,15 @@ def _metrics(row) -> dict:
     cities = row.cities if isinstance(row.cities, list) else []
     military = row.military if isinstance(row.military, dict) else {}
     totals = {key: sum(_si(city.get(key)) for city in cities if isinstance(city, dict)) for key in ("wood", "wine", "marble", "crystal", "sulfur")}
+    transit = units_in_transit(base, at=row.captured_at)
     return {
         "gold": _si(base.get("gold")),
         "income": net_gold_income(base),
         "cities": len(cities),
         "resources": sum(totals.values()),
-        "troops": _unit_total(military.get("troops")),
-        "ships": _unit_total(military.get("fleet")),
+        # N-140: what was travelling at that moment counts too — a move between cities is not a loss
+        "troops": _unit_total(military.get("troops")) + transit["troops"],
+        "ships": _unit_total(military.get("fleet")) + transit["ships"],
         **totals,
     }
 

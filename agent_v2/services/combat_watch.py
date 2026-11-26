@@ -45,6 +45,52 @@ def round_epoch(html: str, now: float) -> int | None:
     return int(epoch) if -120 <= now - epoch <= 1800 else None
 
 
+_NOT_WARSHIPS = ("transport", "freighter", "cargo", "mercante", "201", "204")
+
+
+def _amount(raw: Any) -> int:
+    """The game writes amounts as "5.000" or "5,000"."""
+    try:
+        return max(0, int(str(raw).replace(".", "").replace(",", "").strip() or 0))
+    except Exception:
+        return 0
+
+
+def own_units_in_transit(movements: list, time_now: int, limit: int = 30) -> list[dict]:
+    """N-140: one's own troops and warships travelling (going or coming back). While they travel they are in no
+    city's garrison, so the panel counted a move between cities as a loss. Merchant ships are left out."""
+    out = []
+    for movement in movements or []:
+        if not isinstance(movement, dict) or not movement.get("isOwnArmyOrFleet") or movement.get("isHostile"):
+            continue
+        event = movement.get("event") or {}
+        troops = _amount((movement.get("army") or {}).get("amount"))
+        fleet = movement.get("fleet") or {}
+        rows = [row for row in (fleet.get("ships") or []) if isinstance(row, dict)]
+        if rows:
+            ships = sum(_amount(row.get("amount")) for row in rows
+                        if not any(token in str(row.get("cssClass") or "").lower() for token in _NOT_WARSHIPS))
+        else:
+            carries = any(_amount(item.get("amount")) > 0 for item in (movement.get("resources") or []) if isinstance(item, dict))
+            ships = 0 if carries else _amount(fleet.get("amount"))
+        arrives_at = _to_int(movement.get("eventTime"), 0)
+        if not (troops or ships) or (arrives_at and time_now and arrives_at <= time_now):
+            continue
+        origin = movement.get("origin") or {}
+        target = movement.get("target") or {}
+        out.append({
+            "mission": str(event.get("missionText") or ""),
+            "origin": str(origin.get("name") or ""),
+            "target": str(target.get("name") or ""),
+            "troops": troops,
+            "ships": ships,
+            "arrives_at": arrives_at,
+            "returning": bool(event.get("isReturning") or event.get("isFleetReturning")),
+        })
+    out.sort(key=lambda item: item["arrives_at"] or 0)
+    return out[:limit]
+
+
 def next_own_attack_arrival(movements: list, time_now: int) -> int | None:
     """Seconds until the first of one's own attacks on its way lands; None when there is none."""
     best = None

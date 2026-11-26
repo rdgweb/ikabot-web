@@ -2,7 +2,7 @@
 {% for r in rows %}
 <div class="pr-line">
   <span class="who"><b>{{ r.player }}</b>{% if r.ally %} <span class="text-xs text-muted">[{{ r.ally }}]</span>{% endif %}
-    <small>{{ r.city }} · [{{ r.x }}:{{ r.y }}] · cidade nível {{ r.level }}</small></span>
+    <small>{{ r.city }} · <span class="ik-pv">[{{ r.x }}:{{ r.y }}]</span> · cidade nível {{ r.level }}</small></span>
   {% if can_run %}
   <form method="post" action="/pirataria/" hx-boost="false">{% csrf_token %}
     <input type="hidden" name="server" value="{{ server }}"><input type="hidden" name="player_name" value="{{ r.player }}">

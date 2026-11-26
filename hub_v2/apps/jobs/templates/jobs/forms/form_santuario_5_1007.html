@@ -43,7 +43,7 @@
                 </span>
                 <div class="min-w-0">
                   <div class="truncate text-sm font-semibold text-ink">{{ shrine_ui.summary.shrine_city.city_name }}</div>
-                  <div class="text-[11px] text-muted">Lv {{ shrine_ui.summary.shrine_city.level }}{% if shrine_ui.summary.shrine_city.x and shrine_ui.summary.shrine_city.y %} • [{{ shrine_ui.summary.shrine_city.x }}:{{ shrine_ui.summary.shrine_city.y }}]{% endif %}</div>
+                  <div class="text-[11px] text-muted">Lv {{ shrine_ui.summary.shrine_city.level }}{% if shrine_ui.summary.shrine_city.x and shrine_ui.summary.shrine_city.y %} • <span class="ik-pv">[{{ shrine_ui.summary.shrine_city.x }}:{{ shrine_ui.summary.shrine_city.y }}]</span>{% endif %}</div>
                 </div>
               </div>
               {% else %}

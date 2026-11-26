@@ -40,7 +40,7 @@
   <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
     <div class="rounded-2xl border px-4 py-3" style="border-color: var(--ik-line); background: var(--ik-paper);">
       <div class="text-[10px] uppercase tracking-wide text-muted">Vila</div>
-      <div class="text-sm font-semibold text-ink truncate">{{ i.name|default:"Ilha" }} <span class="font-mono text-[10px] text-muted">{% if i.coords %}[{{ i.coords }}]{% else %}#{{ i.id }}{% endif %}</span></div>
+      <div class="text-sm font-semibold text-ink truncate">{{ i.name|default:"Ilha" }} <span class="font-mono text-[10px] text-muted">{% if i.coords %}<span class="ik-pv">[{{ i.coords }}]</span>{% else %}#{{ i.id }}{% endif %}</span></div>
       <div class="mt-2 flex items-end gap-2">
         <span class="text-3xl font-bold leading-none tabular-nums text-ink">{{ i.level|default:"?" }}</span>
         <span class="text-[11px] text-muted mb-0.5">nível</span>

@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block detail_title %}{{ account.label }}{% endblock %}
-{% block detail_subtitle %}{{ account.email }}{% endblock %}
+{% block detail_subtitle %}<span class="ik-pv">{{ account.email }}</span>{% endblock %}
 
 {% block detail_actions %}
 <button hx-post="{% url 'game:run-action' %}"
@@ -53,7 +53,7 @@
   <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
     <div>
       <dt class="text-muted">Email</dt>
-      <dd class="mt-0.5">{{ account.email }}</dd>
+      <dd class="mt-0.5 ik-pv">{{ account.email }}</dd>
     </div>
     <div>
       <dt class="text-muted">Nó</dt>

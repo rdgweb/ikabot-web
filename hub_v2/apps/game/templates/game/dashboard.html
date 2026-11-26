@@ -23,7 +23,7 @@
   {# ── Filter bar ── #}
   <div class="flex flex-wrap gap-2 items-center">
     {% if nodes.count > 1 %}
-    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+    <select x-model="filterNode" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto ik-pv">
       <option value="">Todos os nos</option>
       {% for node in nodes %}
       <option value="{{ node.pk }}">{{ node.name }}</option>
@@ -32,7 +32,7 @@
     {% endif %}
 
     {% if accounts.count > 1 %}
-    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+    <select x-model="filterAccount" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto ik-pv">
       <option value="">Todas as contas</option>
       {% for acct in accounts %}
       <option value="{{ acct.pk }}">{{ acct.label }}</option>
@@ -40,7 +40,7 @@
     </select>
     {% endif %}
 
-    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+    <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto ik-pv">
       <option value="">Todos os servidores</option>
       {% for card in account_cards %}
       <option value="{{ card.server_id }}">{{ card.player_name }} ({{ card.server_id|world }})</option>
@@ -48,7 +48,7 @@
     </select>
 
     {% if city_options %}
-    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
+    <select x-model="filterCity" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto ik-pv">
       <option value="">Todas as cidades</option>
       {% for city_name in city_options %}
       <option value="{{ city_name }}">{{ city_name }}</option>
@@ -70,7 +70,7 @@
     <img src="{% static 'game/resources/icon_gold.png' %}" class="w-6 h-6" alt="Ouro">
     <div>
       <p class="text-[10px] font-semibold uppercase tracking-wider text-muted">Ouro</p>
-      <p class="text-base font-bold text-ink" x-text="fmt(kpi.gold)">{{ kpi.gold|intcomma }}</p>
+      <p class="text-base font-bold text-ink ik-pv" x-text="fmt(kpi.gold)">{{ kpi.gold|intcomma }}</p>
     </div>
   </div>
   <div class="card !p-3 flex items-center gap-2 cursor-pointer hover:ring-2 hover:ring-[var(--ik-sea)]/30 transition-all" @click="kpiModal='income'">
@@ -196,7 +196,7 @@
         </button>
         <div>
           <div class="flex items-center gap-2">
-            <h3 class="text-sm font-semibold text-ink">{{ card.player_name|default:card.account.label }}</h3>
+            <h3 class="text-sm font-semibold text-ink ik-pv">{{ card.player_name|default:card.account.label }}</h3>
             {% if card.under_attack %}
             <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold text-white animate-pulse"
                   style="background: var(--ik-bad);" title="{{ card.attack_hostile_count }} movimento(s) hostil(is)">
@@ -472,7 +472,7 @@
                     </template>
                   </span>
                   {% if city.x and city.y %}
-                  <span class="text-muted text-[10px]">[{{ city.x }}:{{ city.y }}]</span>
+                  <span class="text-muted text-[10px]"><span class="ik-pv">[{{ city.x }}:{{ city.y }}]</span></span>
                   {% endif %}
                   {% if city.upgrading_count %}
                   <span class="inline-flex items-center gap-0.5 text-amber-500"
@@ -704,14 +704,31 @@
               <i class="bi bi-shield-shaded"></i> Tropas totais
             </h4>
             <p class="text-lg font-bold text-ink">{{ card.troop_total|intcomma }}</p>
+            {% if card.transit.troops %}<p class="text-[11px] text-muted">{{ card.garrison_troops|intcomma }} nas cidades · {{ card.transit.troops|intcomma }} em trânsito</p>{% endif %}
           </div>
           <div class="p-3 rounded" style="background: var(--ik-sand-light);">
             <h4 class="text-xs font-semibold text-muted mb-2">
               <i class="bi bi-water"></i> Frotas totais
             </h4>
             <p class="text-lg font-bold text-ink">{{ card.ship_total|intcomma }}</p>
+            {% if card.transit.ships %}<p class="text-[11px] text-muted">{{ card.garrison_ships|intcomma }} nas cidades · {{ card.transit.ships|intcomma }} em trânsito</p>{% endif %}
           </div>
         </div>
+
+        {# N-140: one's own troops and warships on their way (a move between cities is not a loss) #}
+        {% if card.transit.movements %}
+        <div class="p-3 rounded" style="background: var(--ik-sand-light);">
+          <h4 class="text-xs font-semibold text-muted mb-2"><i class="bi bi-signpost-split"></i> Em trânsito</h4>
+          <div class="space-y-1">
+            {% for move in card.transit.movements %}
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span class="text-ink">{{ move.origin|default:"?" }} → {{ move.target|default:"?" }}{% if move.returning %} <span class="text-muted">(voltando)</span>{% endif %}</span>
+              <span class="font-mono text-muted">{% if move.troops %}{{ move.troops|intcomma }} tropas{% endif %}{% if move.troops and move.ships %} · {% endif %}{% if move.ships %}{{ move.ships|intcomma }} navios{% endif %} · chega em {{ move.left_seconds|duration_human }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
 
         {# ── Occupation / Blockade alert cards ── #}
         {% for city in card.cities %}
@@ -720,7 +737,7 @@
           <div class="px-3 pt-2.5 pb-2">
             <div class="flex items-center gap-1.5 text-[11px] font-bold text-red-800 mb-2">
               <i class="bi bi-exclamation-triangle-fill text-red-600 text-xs"></i>
-              {{ city.name }}
+              <span class="ik-pv">{{ city.name }}</span>
             </div>
             <div style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:0.5rem 0.75rem;">
 
@@ -799,9 +816,9 @@
                     <td class="py-2 px-2 align-top" rowspan="{{ city.troop_rows|length }}">
                       <div class="flex items-center gap-1">
                         <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
-                        <span class="font-medium text-ink">{{ city.name|default:"Cidade" }}</span>
+                        <span class="font-medium text-ink ik-pv">{{ city.name|default:"Cidade" }}</span>
                         {% if city.x and city.y %}
-                        <span class="text-muted text-[10px]">[{{ city.x }}:{{ city.y }}]</span>
+                        <span class="text-muted text-[10px]"><span class="ik-pv">[{{ city.x }}:{{ city.y }}]</span></span>
                         {% endif %}
                       </div>
                     </td>
@@ -881,9 +898,9 @@
                     <td class="py-2 px-2 align-top" rowspan="{{ city.fleet_rows|length }}">
                       <div class="flex items-center gap-1">
                         <i class="bi bi-geo-alt-fill text-sea text-[10px]"></i>
-                        <span class="font-medium text-ink">{{ city.name|default:"Cidade" }}</span>
+                        <span class="font-medium text-ink ik-pv">{{ city.name|default:"Cidade" }}</span>
                         {% if city.x and city.y %}
-                        <span class="text-muted text-[10px]">[{{ city.x }}:{{ city.y }}]</span>
+                        <span class="text-muted text-[10px]"><span class="ik-pv">[{{ city.x }}:{{ city.y }}]</span></span>
                         {% endif %}
                       </div>
                     </td>
@@ -952,7 +969,7 @@
             <i class="bi bi-geo-alt-fill text-sea text-xs"></i>
             {% endif %}
             {% endwith %}
-            <span class="font-semibold text-ink text-xs">{{ city.name|default:"Cidade" }}</span>
+            <span class="font-semibold text-ink text-xs ik-pv">{{ city.name|default:"Cidade" }}</span>
             <a href="{% url 'game:construction' %}?reorder={{ card.game_account_id }}:{{ city.id }}"
                class="ml-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:bg-[rgba(79,134,185,0.12)]"
                style="border-color: rgba(79,134,185,0.4); color: var(--ik-sea);"
