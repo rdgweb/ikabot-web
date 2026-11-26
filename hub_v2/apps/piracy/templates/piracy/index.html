@@ -87,7 +87,8 @@
   .pr-line .who { flex: 1; min-width: 0; }
   .pr-line .who b { font-weight: 600; color: var(--ik-ink); }
   .pr-line .who small { display: block; font-size: .68rem; color: var(--ik-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pp-dialog { border: 0; border-radius: 18px; padding: 0; width: min(560px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  .pp-dialog { border: 0; border-radius: 18px; padding: 0; width: min(560px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,.25);
+               position: fixed; inset: 0; margin: auto; height: fit-content; max-height: 90vh; overflow-y: auto; }   /* N-263: centered (the CSS reset put it at the top left) */
   .pp-dialog::backdrop { background: rgba(40,30,15,.35); }
   .pp-form { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; padding: 1.2rem 1.3rem; }
   .pp-form label { display: block; font-size: .7rem; font-weight: 700; color: var(--ik-muted); margin-bottom: .2rem; text-transform: uppercase; letter-spacing: .05em; }

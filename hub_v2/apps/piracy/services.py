@@ -872,14 +872,15 @@ def _taken(month) -> set:
 
 
 def champion_may_take(month, champion, ga, now: datetime | None = None, theirs: dict | None = None) -> bool:
-    """N-263: a champion takes an origin directly — another lobby, the pair free, not its passer later in the block
-    (the pair would be locked on that day), and a sure win."""
+    """N-263: a champion takes an origin directly — another lobby, the pair free, a sure win, and not its passer later
+    in the block (the pair would be locked on that day) unless that one already holds direct_points: then the points
+    are not left exposed for days — the champion takes them and the agenda gives that day to another account."""
     now = now or timezone.now()
     if ga.account_id == champion.account_id or pair_release(month, champion, ga, now):
         return False
-    if str(ga.pk) in flow.still_to_pass(month, champion, now):
-        return False
     theirs = theirs or strength(ga)
+    if str(ga.pk) in flow.still_to_pass(month, champion, now) and (theirs["points"] or 0) < max(month.direct_points or 0, month.min_points):
+        return False
     return sure_win(strength(champion)["crew"], theirs["crew"], month.min_win_percent)
 
 
@@ -1043,6 +1044,8 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
                                            target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
                                            due_from=now, due_until=until)
         route = PiracyRoute._base_manager.select_related("raider", "target").get(pk=route.pk)
+        if role == PiracyMember.CHAMPION and str(ga.pk) in flow.still_to_pass(month, game_account, now):
+            flow.replan_rest(month, now)                 # N-263: its day goes to another account
         return {"route": {**_payload(route, _target_info(ga)), "convert_points": convert}, "hold": hold, **extra}
     outside = _outside_route(month, member, game_account, mine, now, week, role)
     if outside is None and later:

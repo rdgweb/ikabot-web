@@ -120,8 +120,9 @@ def _able(month, passer, others) -> int:
     return count
 
 
-def build_block(month, number: int) -> list[dict]:
-    """The agenda of one block: for each of its days, {champion pk: passer pk} (a champion may have none)."""
+def build_block(month, number: int, fixed: list[dict] | None = None) -> list[dict]:
+    """The agenda of one block: for each of its days, {champion pk: passer pk} (a champion may have none).
+    fixed: the days already decided (kept as they are; only the ones after them are drawn)."""
     champions, others = champions_of(month), others_of(month)
     length = max(1, month.pair_days or 3)
     first = day_start(month, month.starts_at) + timedelta(days=number * length)
@@ -132,9 +133,13 @@ def build_block(month, number: int) -> list[dict]:
                 for passer in day.values():
                     served[passer] = served.get(passer, 0) + 1
     able = {ga.pk: _able(month, ga, others) for ga in others}
-    slots = [(d, c) for d in range(length) for c in champions]
-    best = {"filled": -1, "plan": {}}
-    plan = {}
+    fixed = list(fixed or [])[:length]
+    plan = {(d, c.pk): int(day[str(c.pk)]) if str(day[str(c.pk)]).isdigit() else next(
+        (p.pk for p in others if str(p.pk) == day[str(c.pk)]), None)
+        for d, day in enumerate(fixed) for c in champions if str(c.pk) in day}
+    plan = {k: v for k, v in plan.items() if v is not None}
+    slots = [(d, c) for d in range(len(fixed), length) for c in champions]
+    best = {"filled": -1, "plan": dict(plan)}
 
     def options(d, champion):
         deliver = first + timedelta(days=d + 1) - DELIVER_MARGIN
@@ -161,6 +166,18 @@ def build_block(month, number: int) -> list[dict]:
     walk(0, 0)
     return [{str(c.pk): str(best["plan"][(d, c.pk)]) for c in champions if (d, c.pk) in best["plan"]}
             for d in range(length)]
+
+
+def replan_rest(month, now: datetime | None = None) -> None:
+    """The days after today are drawn again (a champion took a future passer of its directly: the pair is locked on
+    that passer's day, so another account takes the day)."""
+    number, day = _block(month, now)
+    days = agenda(month, now)
+    turns = dict(month.turns or {})
+    turns[f"block:{number}"] = build_block(month, number, fixed=days[:day + 1])
+    month.turns = turns
+    if month.pk:
+        PiracyMonth._base_manager.filter(pk=month.pk).update(turns=turns)
 
 
 def agenda(month, now: datetime | None = None) -> list[dict]:

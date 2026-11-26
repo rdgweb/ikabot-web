@@ -389,16 +389,23 @@ class AgendaTests(Base):
 
     def test_a_champion_never_raids_directly_its_passer_of_later(self):
         big, middle, small = self.lobbies()
-        month = self.plan(champions=[big[0], middle[0]], direct_points=0)
+        month = self.plan(champions=[big[0], middle[0]], direct_points=20000)
         later = flow.still_to_pass(month, big[0])
         self.assertTrue(later)
         for ga in self.accounts:
             self.set_strength(ga, points=0, crew=1000)
         self.set_strength(big[0], points=0, crew=30000)
         for pk in later:
-            self.set_strength(next(ga for ga in self.accounts if str(ga.pk) == pk), points=30000, crew=1000)
+            self.set_strength(next(ga for ga in self.accounts if str(ga.pk) == pk), points=15000, crew=1000)
         self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
-        self.assertFalse(PiracyRoute.objects.filter(raider=big[0], target_id__in=[int(pk) if pk.isdigit() else pk for pk in later]).exists())
+        self.assertFalse(PiracyRoute.objects.filter(raider=big[0], target__pk__in=[ga.pk for ga in self.accounts if str(ga.pk) in later]).exists())
+        # one that already holds direct_points is taken now, and its day goes to another account
+        full = next(ga for ga in self.accounts if str(ga.pk) in later)
+        self.set_strength(full, points=30000, crew=1000)
+        self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
+        self.assertTrue(PiracyRoute.objects.filter(raider=big[0], target=full).exists())
+        month.refresh_from_db()
+        self.assertNotIn(str(full.pk), flow.still_to_pass(month, big[0]))
 
     def test_direct_only_from_direct_points_and_the_passer_waits_its_window(self):
         big, middle, _small = self.lobbies()
