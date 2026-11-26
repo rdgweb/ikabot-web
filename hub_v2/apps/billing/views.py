@@ -91,10 +91,19 @@ class PlanView(LoginRequiredMixin, TemplateView):
         current = account.limit if account.status in (BillingAccount.ACTIVE, BillingAccount.CANCELED) else None
         subscribed = bool(account.subscription_id and account.status == BillingAccount.ACTIVE and account.paid_until)
         from .services import upgrade_cost
+        from apps.accounts.platform_agent import accounts_with_agent
+        from .offers import estimate_monthly
+        from apps.proxy.platform import PROXIES_PER_ACCOUNT
+        agent_count = accounts_with_agent(self.request.organization)
+        proxy_count = _addons(self.request.organization)
+        def estimate(limit):
+            return estimate_monthly(active_subaccounts=active, platform_agents=agent_count,
+                                    platform_proxies=proxy_count, limit=limit)
+        addon_total = plans.ADDON_AGENT * agent_count + plans.ADDON_PROXIES * proxy_count
         ctx.update({
             "account": account, "state": state, "active": active, "can_change": _is_owner(self.request),
             "configured": asaas.configured(), "sandbox": settings.ASAAS_SANDBOX,
-            "options": [{"limit": limit, "price": plans.brl(plans.price_for(limit)),
+            "options": [{"limit": limit, "price": plans.brl(plans.price_for(limit)), "total": plans.brl(estimate(limit).total),
                          "fits": active <= limit or (subscribed and limit < account.limit),
                          "current": limit == current, "suggested": limit == plans.tier_for(active),
                          "now": plans.brl(upgrade_cost(account, limit)) if subscribed and limit > account.limit else "",
@@ -104,7 +113,11 @@ class PlanView(LoginRequiredMixin, TemplateView):
             "upgrade_value": plans.brl(account.upgrade_value) if account.upgrade_payment_id else "",
             "monthly": plans.brl(_monthly(account)) if subscribed else "",
             "addons": _addons(self.request.organization),
-            "more": [{"limit": limit, "price": plans.brl(plans.price_for(limit))} for limit in plans.limits()[7:]],
+            "agent_addons": agent_count, "proxy_unit_price": plans.brl(plans.ADDON_PROXIES),
+            "proxy_package_size": PROXIES_PER_ACCOUNT,
+            "agent_unit_price": plans.brl(plans.ADDON_AGENT), "addon_total": plans.brl(addon_total),
+            "has_addons": bool(agent_count or proxy_count),
+            "more": [{"limit": limit, "price": plans.brl(plans.price_for(limit)), "total": plans.brl(estimate(limit).total)} for limit in plans.limits()[7:]],
             "price": plans.brl(account.price) if account.price else "",
             "returned": self.request.GET.get("ok") == "1",
             **_org_tabs(self.request, "plan"),

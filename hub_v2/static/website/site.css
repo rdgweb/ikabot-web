@@ -92,6 +92,10 @@ section { padding: 52px 0; }
 .chip i { color: var(--gold); }
 
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.cost-breakdown { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; margin: 24px 0; }
+.cost-breakdown dt { color: var(--ink-2); }
+.cost-breakdown dd { margin: 0; font-weight: 700; color: var(--brown); text-align: right; white-space: nowrap; }
+#estimate .errorlist { color: #9a3429; font-size: .9rem; padding-left: 18px; margin: 6px 0; }
 .identity { display: flex; gap: 14px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
 .node { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--line);
         background: #fffaf0; font-size: .85rem; font-weight: 600; color: var(--ink-2); min-width: 92px; }

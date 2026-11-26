@@ -104,6 +104,11 @@ jobs:
           python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 apps.orgs.tests_system --settings=config.settings.test --noinput
           TEST_MARIADB=1 python hub_v2/manage.py test apps.accounts.tests_n131 apps.accounts.tests_n259 apps.orgs.tests_system --settings=config.settings.test --noinput
 
+      - name: Test offer units, estimates and checkout disclosure
+        run: |
+          python hub_v2/manage.py test apps.billing.tests_offers apps.website.tests --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.billing.tests_offers apps.website.tests --settings=config.settings.test --noinput
+
       - name: Test piracy conversion board and donation network recovery
         run: |
           python -m pip install -r agent_v2/requirements.txt
@@ -125,7 +130,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/browser-tests" --no-save playwright@1.58.2
           export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
           node "$NODE_PATH/playwright/cli.js" install --with-deps chromium
-          node --test .github/scripts/test_agent_update_confirmation.cjs .github/scripts/test_access_interface.cjs
+          node --test .github/scripts/test_agent_update_confirmation.cjs .github/scripts/test_access_interface.cjs .github/scripts/test_offer_interface.cjs
 
   build:
     needs: validate

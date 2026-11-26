@@ -44,7 +44,7 @@ META = {
                  "One dashboard for many Ikariam accounts and worlds: building, transport, trading between your own "
                  "accounts and Telegram alerts, with the agent running on your own machine."),
         "pricing": ("Pricing — IkaHub",
-                    "Priced by active sub-accounts, from US$ 4 a month. Your own agent and proxies included; "
+                    "Plans in Brazilian reais, priced by active characters. Platform hosting and proxies are separate add-ons; "
                     "platform agent and proxies as add-ons."),
         "faq": ("FAQ — IkaHub",
                 "Sub-accounts, agent, proxies, password safety, ban risk and cancelling: the most common questions about IkaHub."),
@@ -149,7 +149,7 @@ HOME = {
         "identity_text": "Accounts in the same world go out through different agents and proxies. Accounts on the same "
                          "agent never interact — the hub already enforces it in trading and the generals bank.",
         "pricing_title": "Priced by active sub-accounts",
-        "pricing_text": "From US$ 4 a month for up to 4 sub-accounts, with your own agent and proxies. Pause a sub-account and the slot is free.",
+        "pricing_text": "Plans are billed in Brazilian reais by active characters. Platform hosting and proxy packages are separate add-ons per GameForge lobby.",
         "cta_title": "Want to try the beta?",
         "cta_text": "IkaHub is in closed beta. Request an invite.",
         "cta_open_title": "Start now", "cta_open_text": "7 free days, up to 4 sub-accounts, no card.",
@@ -158,49 +158,35 @@ HOME = {
     },
 }
 
-# Prices, monthly, by ACTIVE sub-accounts: reais from the billing table (N-124) for Portuguese; the
-# English page keeps the planned dollar prices (N-106) until charging abroad exists.
-TIERS = [(1, 4, 4), (5, 10, 8), (11, 20, 14), (21, 40, 24), (41, 80, 40)]
+# Both languages show the live BRL billing table; old launch estimates are not checkout prices.
 
 
 def tiers_for(lang: str) -> list[tuple[int, int, str]]:
-    if lang == "pt":
-        from apps.billing.plans import TIERS as BRL, brl
+    from apps.billing.plans import TIERS as BRL, brl
 
-        out, low = [], 1
-        for most, price in BRL:
-            out.append((low, most, brl(price)))
-            low = most + 1
-        return out
-    return [(low, high, f"US$ {price}") for low, high, price in TIERS]
+    out, low = [], 1
+    for most, price in BRL:
+        out.append((low, most, brl(price)))
+        low = most + 1
+    return out
 
 
 def price_range(lang: str) -> tuple[str, str, str]:
     """(currency, lowest, highest) for the structured data."""
-    if lang == "pt":
-        from apps.billing.plans import TIERS as BRL
-
-        return "BRL", str(BRL[0][1]), str(BRL[-1][1])
-    return "USD", str(TIERS[0][2]), str(TIERS[-1][2])
-ABOVE = {"from": 81, "each": "0,50"}
-ADDONS = {"agent": 2, "proxy": 3}
+    from apps.billing.plans import TIERS as BRL
+    return "BRL", str(BRL[0][1]), str(BRL[-1][1])
 
 PRICING = {
     "pt": {
         "title": "Preço por subcontas ativas",
-        "lead": "Você paga pelas subcontas que estão trabalhando. Agente e proxies próprios já estão incluídos.",
+        "lead": "O plano considera subcontas ativas. Hospedagem e proxies da plataforma são adicionais por lobby.",
         "note": "Pix, cartão ou boleto, renovação mensal; cancele quando quiser. Durante o beta fechado o acesso é por convite.",
         "per_month": "/mês", "subaccounts": "subcontas", "up_to": "até", "above": "Acima de 80",
         "above_text": "R$ 1,90 por subconta ativa",
         "included_title": "Incluído em todos",
         "included": ["Painel, ações e construção", "Mercado entre as suas contas", "Telegram por organização",
-                     "Controle manual", "Registro de atividades", "Agente e proxies próprios"],
+                     "Controle manual", "Registro de atividades", "Uso com agente e proxies próprios"],
         "addons_title": "Adicionais",
-        "addons_soon": "em breve",
-        "addons": [("bi-hdd-network", "Agente da plataforma", "",
-                    "Rodamos o agente para você; um agente por conta, sempre com proxy."),
-                   ("bi-globe2", "Proxies da plataforma", "",
-                    "Proxies reservados só para a sua conta, no login e no jogo.")],
         "trial_title": "Teste de 7 dias",
         "trial_text": "Toda organização nova começa com 7 dias grátis e até 4 subcontas, sem cartão. Depois, é só escolher a faixa.",
         "what_title": "O que é uma subconta?",
@@ -208,19 +194,14 @@ PRICING = {
     },
     "en": {
         "title": "Priced by active sub-accounts",
-        "lead": "You pay for the sub-accounts that are working. Your own agent and proxies are already included.",
-        "note": "Planned launch prices. During the closed beta access is by invitation.",
+        "lead": "The plan covers active sub-accounts. Platform hosting and proxies are separate add-ons per lobby.",
+        "note": "Prices in Brazilian reais. During the closed beta access is by invitation.",
         "per_month": "/mo", "subaccounts": "sub-accounts", "up_to": "up to", "above": "Above 80",
-        "above_text": "US$ 0.50 per active sub-account",
+        "above_text": "R$ 1.90 BRL per active sub-account",
         "included_title": "Included in every plan",
         "included": ["Dashboard, actions and building", "Trading between your accounts", "Telegram per organization",
-                     "Manual control", "Activity log", "Your own agent and proxies"],
+                     "Manual control", "Activity log", "Use with your own agent and proxies"],
         "addons_title": "Add-ons",
-        "addons_soon": "soon",
-        "addons": [("bi-hdd-network", "Platform agent", "US$ 2/mo per GameForge account",
-                    "We run the agent for you; one agent per account, always behind a proxy."),
-                   ("bi-globe2", "Platform proxies", "US$ 3/mo per GameForge account",
-                    "Proxies reserved for your account only, for login and gameplay.")],
         "trial_title": "7-day trial",
         "trial_text": "When sales open, the trial covers up to 4 sub-accounts, with no charge for the first 7 days.",
         "what_title": "What is a sub-account?",
@@ -235,10 +216,10 @@ FAQ = {
          "O preço conta só as ativas: pausar uma subconta libera a vaga."),
         ("Preciso deixar o computador ligado?",
          "O agente roda em qualquer máquina com Docker — PC, servidor ou VPS. Enquanto ele estiver ligado, as contas trabalham. "
-         "O agente da plataforma, que roda por você, vem em breve."),
+         "A hospedagem na plataforma é um adicional por lobby GameForge e depende de disponibilidade."),
         ("Preciso de proxy?",
          "Para várias contas no mesmo mundo, sim: cada conta GameForge sai por um IP próprio, para não parecer multiconta. "
-         "Você cadastra os seus proxies; os da plataforma vêm em breve."),
+         "Você pode fornecer os seus ou usar o pacote da plataforma, cobrado separadamente por lobby. O agente da plataforma exige proxies."),
         ("Minha senha está segura?",
          "A senha do GameForge fica cifrada no banco e só é entregue ao seu agente, por HTTPS e com a chave daquele agente. "
          "Cada entrega fica no registro de atividades da sua organização."),
@@ -260,10 +241,10 @@ FAQ = {
          "Only active ones count: pausing a sub-account frees the slot."),
         ("Does my computer need to stay on?",
          "The agent runs on any machine with Docker — a PC, a server or a VPS. While it is on, your accounts work. "
-         "The platform agent, which runs for you, is coming soon."),
+         "Platform hosting is a separate add-on per GameForge lobby, subject to availability."),
         ("Do I need proxies?",
          "For several accounts in the same world, yes: each GameForge account goes out through its own IP, so it does not look like a multi-account. "
-         "You add your own proxies; platform proxies are coming soon."),
+         "Bring your own proxies or use a separate platform package per lobby. Platform agents require proxies."),
         ("Is my password safe?",
          "The GameForge password is stored encrypted and is only handed to your agent, over HTTPS and with that agent's key. "
          "Every hand-over is written to your organization's activity log."),

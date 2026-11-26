@@ -18,6 +18,7 @@ from apps.orgs.services import TERMS_VERSION, signup_available
 
 from . import content as C
 from .models import InviteRequest
+from .offer_content import offer_content
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ def home_for(request):
 
 
 def _context(request, lang: str, page: str, **extra) -> dict:
+    from apps.billing.services import billing_open
     base = site_url(request)
     title, description = C.META[lang][page]
     alternates = [(C.HTML_LANG[code], base + C.path_of(code, page)) for code in C.LANGS]
@@ -56,6 +58,7 @@ def _context(request, lang: str, page: str, **extra) -> dict:
         "cta": ({"label": C.UI[lang]["start"], "href": C.path_of(lang, "signup"), "icon": "bi-rocket-takeoff"} if signup_available()
                 else {"label": C.UI[lang]["invite"], "href": C.path_of(lang, "contact"), "icon": "bi-envelope-paper"}),
         "legal": settings.SITE_LEGAL, "terms_version": TERMS_VERSION,
+        "offer": offer_content(lang), "subscriptions_open": billing_open(),
         "umami": bool(settings.UMAMI_URL and settings.UMAMI_WEBSITE_ID), "umami_id": settings.UMAMI_WEBSITE_ID,
         "structured": json.dumps(_structured(base, lang, page), ensure_ascii=False).replace("<", "\\" + "u003c"),
         **extra,
@@ -68,7 +71,7 @@ def _structured(base: str, lang: str, page: str) -> list:
         "applicationCategory": "GameApplication", "operatingSystem": "Web, Linux, Windows",
         "url": base + C.path_of(lang, "home"), "description": C.META[lang]["home"][1],
         "offers": {"@type": "AggregateOffer", "priceCurrency": C.price_range(lang)[0], "lowPrice": C.price_range(lang)[1],
-                   "highPrice": C.price_range(lang)[2], "offerCount": str(len(C.TIERS))},
+                   "highPrice": C.price_range(lang)[2], "offerCount": str(len(C.tiers_for(lang)))},
     }]
     if page == "faq":
         data.append({
@@ -87,7 +90,21 @@ class SitePageView(View):
         if page == "home":
             extra = {"t": C.HOME[lang], "p": C.PRICING[lang], "faq": C.FAQ[lang][:4]}
         elif page == "pricing":
-            extra = {"t": C.PRICING[lang], "tiers": C.tiers_for(lang), "above": C.ABOVE}
+            from apps.billing import plans
+            from apps.billing.offers import estimate_monthly
+            from .forms import CostEstimateForm
+            form = CostEstimateForm(request.GET if 'estimate' in request.GET else None, lang=lang)
+            estimate = None
+            if not form.is_bound or form.is_valid():
+                values = form.cleaned_data if form.is_bound else {name: field.initial for name, field in form.fields.items()}
+                quote = estimate_monthly(active_subaccounts=values['active_subaccounts'],
+                    platform_agents=values['platform_agents'], platform_proxies=values['platform_proxies'])
+                estimate = {'limit': quote.limit, 'base': plans.brl(quote.base), 'agents': plans.brl(quote.agents),
+                            'proxies': plans.brl(quote.proxies), 'total': plans.brl(quote.total)}
+            pricing = dict(C.PRICING[lang])
+            pricing['above_text'] = plans.brl(plans.ABOVE_EACH) + (' por subconta ativa' if lang == 'pt' else ' BRL per active sub-account')
+            extra = {"t": pricing, "tiers": C.tiers_for(lang)}
+            extra.update(estimate_form=form, estimate=estimate)
         elif page == "faq":
             extra = {"faq": C.FAQ[lang]}
         elif page == "contact":
@@ -95,7 +112,8 @@ class SitePageView(View):
         elif page == "signup":
             extra = {"t": C.SIGNUP[lang], "sent": request.GET.get("ok") == "1"}
         template = f"website/legal/{page}_{lang}.html" if page in C.LEGAL_PAGES else f"website/{page}.html"
-        return render(request, template, _context(request, lang, page, **extra))
+        return render(request, template, _context(request, lang, page, **extra),
+                      status=400 if page == 'pricing' and form.is_bound and not form.is_valid() else 200)
 
 
 class InviteRequestView(View):

@@ -5,7 +5,7 @@
   <div class="wrap">
     <span class="pill"><i class="bi bi-stars"></i> {% if open_signup %}{{ ui.beta_open }}{% else %}{{ ui.beta }}{% endif %}</span>
     <h1 style="margin-top: 14px;">{{ t.title }}</h1>
-    <p>{{ t.lead }}</p>
+    <p>{{ offer.intro }}</p>
   </div>
 </div>
 
@@ -23,7 +23,8 @@
         <div style="font-weight: 700; color: var(--brown); margin-top: 10px;">{{ t.above_text }}</div>
       </div>
     </div>
-    <p class="note"><i class="bi bi-info-circle"></i> {{ t.note }}</p>
+    <p class="note"><i class="bi bi-info-circle"></i> {% if subscriptions_open %}{{ offer.open }}{% else %}{{ offer.closed }}{% endif %}</p>
+    <p class="note">{{ offer.currency }}</p>
   </div>
 </section>
 
@@ -37,27 +38,52 @@
     </div>
     <div class="card">
       <h3 style="margin-top: 0; margin-bottom: 14px;">{{ t.addons_title }}</h3>
-      {% for icon, name, price, text in t.addons %}
       <div style="display: flex; gap: 12px; margin-bottom: 14px;">
-        <span class="icon"><i class="bi {{ icon }}"></i></span>
+        <span class="icon"><i class="bi bi-hdd-network"></i></span>
         <div>
-          <b>{{ name }}</b><span class="soon">{{ t.addons_soon }}</span>
-          {% if price %}<div style="color: var(--brown); font-weight: 700; font-size: .95rem;">{{ price }}</div>{% endif %}
-          <div style="color: var(--ink-2); font-size: .94rem;">{{ text }}</div>
+          <b>{{ offer.agents }}</b><div style="color: var(--brown); font-weight: 700;">{{ offer.agent }}</div>
+          <p>{{ offer.agent_text }}</p>
         </div>
       </div>
-      {% endfor %}
+      <div style="display: flex; gap: 12px; margin-bottom: 14px;">
+        <span class="icon"><i class="bi bi-globe2"></i></span>
+        <div><b>{{ offer.proxies }}</b><div style="color: var(--brown); font-weight: 700;">{{ offer.proxy }}</div><p>{{ offer.proxy_text }}</p></div>
+      </div>
+      <p class="note">{{ offer.own }}</p>
     </div>
   </div>
 </section>
 
 <section style="padding-top: 10px;">
   <div class="wrap split">
-    <div class="card"><h3 style="margin-top: 0;"><i class="bi bi-hourglass-split" style="color: var(--gold-2);"></i> {{ t.trial_title }}</h3><p>{{ t.trial_text }}</p></div>
+    <div class="card"><h3 style="margin-top: 0;"><i class="bi bi-hourglass-split" style="color: var(--gold-2);"></i> {{ t.trial_title }}</h3><p>{{ offer.trial }}</p></div>
     <div class="card"><h3 style="margin-top: 0;"><i class="bi bi-diagram-3" style="color: var(--gold-2);"></i> {{ t.what_title }}</h3><p>{{ t.what_text }}</p></div>
   </div>
-  <div class="wrap center" style="margin-top: 30px;">
-    <a class="btn btn-primary" href="{{ cta.href }}"><i class="bi {{ cta.icon }}"></i> {{ cta.label }}</a>
+</section>
+<section id="estimate" style="padding-top: 10px;">
+  <div class="wrap split">
+    <div class="card">
+      <h2 style="margin-top: 0;">{{ offer.simulate }}</h2>
+      <form class="form" method="get" action="#estimate">
+        <input type="hidden" name="estimate" value="1">
+        {{ estimate_form.non_field_errors }}
+        {% for field in estimate_form %}<div style="margin-bottom: 14px;"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
+        <button class="btn btn-primary" type="submit">{{ offer.calculate }}</button>
+      </form>
+    </div>
+    <div class="card" aria-live="polite">
+      {% if estimate %}
+      <h3 style="margin-top: 0;">{{ offer.total }}</h3>
+      <dl class="cost-breakdown"><dt>{{ offer.base }} · {{ offer.up_to }} {{ estimate.limit }} {{ offer.characters }}</dt><dd>{{ estimate.base }}</dd>
+        <dt>{{ offer.agents }}</dt><dd>{{ estimate.agents }}</dd><dt>{{ offer.proxies }}</dt><dd>{{ estimate.proxies }}</dd></dl>
+      <p style="font-size: 1.8rem; color: var(--brown); font-weight: 800;">{{ estimate.total }}<small style="font-size: .9rem;">{{ offer.per_month }}</small></p>
+      {% endif %}
+      <p class="note">{{ offer.estimate_note }}</p>
+      {% for name, description in offer.glossary %}<p><b>{{ name }}</b><br>{{ description }}</p>{% endfor %}
+    </div>
   </div>
 </section>
+<div class="wrap center" style="margin-bottom: 36px;">
+  <a class="btn btn-primary" href="{{ cta.href }}"><i class="bi {{ cta.icon }}"></i> {{ cta.label }}</a>
+</div>
 {% endblock %}

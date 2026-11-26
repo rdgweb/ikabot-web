@@ -52,7 +52,7 @@
   <div class="org-card">
     <span class="org-icon"><i class="bi bi-cash-coin"></i></span>
     <span><span class="org-card-label">Mensal</span><span class="org-card-value" style="display: block;">{{ monthly|default:price }}</span>
-      {% if addons %}<span class="org-card-note">faixa {{ price }} + proxies em {{ addons }} conta(s)</span>{% endif %}</span>
+      {% if has_addons %}<span class="org-card-note">faixa {{ price }} + {{ agent_addons }} agente(s) + {{ addons }} pacote(s) de proxies por lobby</span>{% endif %}</span>
   </div>
   {% endif %}
   {% if sandbox and configured %}
@@ -87,6 +87,14 @@
   {% elif not can_change %}
   <p class="text-sm text-muted" style="margin: 0;">Só o dono da organização escolhe e paga o plano.</p>
   {% else %}
+  <div class="pl-msg info" style="display: block;">
+    <b>Confira o custo completo antes de contratar</b>
+    <p>O plano considera personagens ativos (subcontas). Os adicionais consideram cada login GameForge (lobby), mesmo que reúna vários personagens.</p>
+    <p>{{ agent_addons }} agente(s) da plataforma × {{ agent_unit_price }} + {{ addons }} pacote(s) de {{ proxy_package_size }} proxies × {{ proxy_unit_price }} = <b>{{ addon_total }}/mês em adicionais</b>.</p>
+    <p>Os totais abaixo somam esses adicionais à faixa escolhida. Agente e proxies próprios não geram adicional no IkaHub; máquina e serviços externos são de sua responsabilidade.</p>
+    {% if not subscribed %}<p><b>Nesta contratação inicial, o checkout cobra a faixa do plano.</b> O total mensal com os adicionais ativos é mostrado separadamente para as renovações. Ativações posteriores podem ter cobrança proporcional, informada antes de confirmar.</p>{% endif %}
+    <a href="/pt/precos/#estimate" hx-boost="false">Entenda as unidades e simule outro cenário</a>
+  </div>
   <h3><i class="bi bi-layers"></i> {% if account.subscription_id and account.status == 'active' %}Trocar de faixa{% else %}Escolha a faixa{% endif %}</h3>
   <form method="post" hx-boost="false">
     {% csrf_token %}
@@ -96,7 +104,8 @@
         <input type="radio" name="limit" value="{{ o.limit }}" {% if not o.fits %}disabled{% endif %} {% if o.current or o.suggested and not account.subscription_id %}checked{% endif %}>
         {% if o.current %}<span class="pl-tag cur">atual</span>{% elif o.suggested %}<span class="pl-tag sug">indicada</span>{% endif %}
         <span class="n">até {{ o.limit }} subcontas</span>
-        <span class="p">{{ o.price }}<small>/mês</small></span>
+        <span class="p">{{ o.total }}<small>/mês</small></span>
+        <span class="text-sm text-muted">plano {{ o.price }}{% if has_addons %} + adicionais {{ addon_total }}{% endif %}</span>
         {% if o.now %}<span class="org-chip gold" style="margin-top: .25rem;">+{{ o.now }} agora</span>
         {% elif o.later %}<span class="org-chip off" style="margin-top: .25rem;">no vencimento</span>{% endif %}
       </label>
@@ -107,7 +116,7 @@
       <span class="text-sm text-muted">Mais de 100:</span>
       <select name="limit_more" class="form-input" style="width: auto;" onchange="if (this.value) { this.form.querySelectorAll('input[name=limit]').forEach(i => i.checked = false); this.name = 'limit'; }">
         <option value="">escolher</option>
-        {% for o in more %}<option value="{{ o.limit }}">até {{ o.limit }} — {{ o.price }}/mês</option>{% endfor %}
+        {% for o in more %}<option value="{{ o.limit }}">até {{ o.limit }} — total {{ o.total }}/mês (plano {{ o.price }})</option>{% endfor %}
       </select>
     </div>
     {% endif %}

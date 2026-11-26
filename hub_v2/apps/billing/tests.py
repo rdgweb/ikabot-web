@@ -327,6 +327,8 @@ class WebhookTests(TestCase):
 
 
 class SitePricesTests(TestCase):
-    def test_portuguese_prices_in_reais_english_in_dollars(self):
+    def test_both_languages_show_the_current_reais_prices(self):
         self.assertIn("R$ 14,90", self.client.get("/pt/precos/").content.decode())
-        self.assertIn("US$ 4", self.client.get("/en/pricing/").content.decode())
+        english = self.client.get("/en/pricing/").content.decode()
+        self.assertIn("R$ 14,90", english)
+        self.assertNotIn("US$ 4", english)

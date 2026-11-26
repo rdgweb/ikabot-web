@@ -12,6 +12,14 @@
 
 <section style="padding-top: 10px;">
   <div class="wrap narrow">
+    <div class="card" style="margin-bottom: 20px;">
+      <h2 style="margin-top: 0;">{{ offer.title }}</h2>
+      <p>{{ offer.trial }}</p><p>{{ offer.intro }}</p>
+      <p>{{ offer.agents }}: <b>{{ offer.agent }}</b><br>{{ offer.proxies }}: <b>{{ offer.proxy }}</b></p>
+      <p class="note">{{ offer.own }}</p>
+      <p class="note">{% if subscriptions_open %}{{ offer.open }}{% else %}{{ offer.closed }}{% endif %}</p>
+      <a href="{{ links.pricing }}#estimate">{{ offer.pricing_link }}</a>
+    </div>
     {% if not open_signup %}
     <div class="card center"><a class="btn btn-primary" href="{{ links.contact }}"><i class="bi bi-envelope-paper"></i> {{ ui.invite }}</a></div>
     {% elif sent %}

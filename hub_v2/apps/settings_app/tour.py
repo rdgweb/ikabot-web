@@ -57,6 +57,7 @@ def state(organization=None) -> dict:
     from apps.accounts import platform_agent
     from apps.accounts.models import Account, GameAccount, Node
     from apps.orgs.services import DEFAULT_SLUG
+    from apps.billing import plans
 
     nodes = list(Node.objects.all())
     account = Account.objects.order_by("created_at").first()
@@ -69,6 +70,8 @@ def state(organization=None) -> dict:
         "first_account": str(account.pk) if account else "",
         "platform": bool(customer and platform_agent.host() is not None),
         "platform_agents": Account.objects.filter(platform_agent=True).count(),
+        "platform_agent_price": plans.brl(plans.ADDON_AGENT),
+        "platform_proxy_price": plans.brl(plans.ADDON_PROXIES),
     }
 
 
