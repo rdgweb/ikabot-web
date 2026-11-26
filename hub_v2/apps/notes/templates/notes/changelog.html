@@ -119,12 +119,7 @@
                 {% elif node.latest_update %}<div class="mt-1 text-[11px] text-muted">Última: {{ node.latest_update.get_status_display }}</div>{% endif %}
               </td>
               <td class="text-right">
-                {% if node.latest_update.status == 'queued' %}
-                  <form method="post" action="{% url 'accounts:node-cancel-update' node.pk %}" class="inline" hx-boost="false">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-x-circle"></i> Cancelar</button>
-                  </form>
-                {% elif node.release_state.code == 'outdated' and node.is_online and node.supervisor_is_online %}
+                {% if node.release_state.code == 'outdated' and node.is_online and node.supervisor_is_online and node.latest_update.status != 'queued' %}
                   <form method="post"
                         action="{% url 'accounts:node-request-update' node.pk %}"
                         class="inline"
@@ -138,6 +133,12 @@
                         })">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-cloud-download"></i> Atualizar pelo Hub</button>
+                  </form>
+                {% elif node.latest_update.status == 'queued' %}
+                  {# N-261: a queued update can be given up; the node goes back to taking jobs #}
+                  <form method="post" action="{% url 'accounts:node-cancel-update' node.pk %}" class="inline" hx-boost="false">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-x-circle"></i> Cancelar</button>
                   </form>
                 {% else %}
                   <a href="{% url 'accounts:node-deploy' node.pk %}" class="btn btn-secondary btn-sm"><i class="bi bi-shield-check"></i> {% if node.supervisor_is_online %}Detalhes{% else %}Instalar supervisor{% endif %}</a>
