@@ -90,6 +90,9 @@ SCOPES: dict[str, tuple[str, str, bool]] = {
 
 # Platform-wide for now (per-organization settings are stage 4).
 GLOBAL_MODELS = {
+    # Platform service announcements: publication filters expose only approved messages;
+    # drafts/history are restricted by platform.incidents capabilities, never tenant data.
+    "service_status.Incident", "service_status.Update",
     # Personal account data is authorized by user identity, never by organization or staff status.
     "users.UserProfile", "users.UserSession", "users.EmailChallenge",
     # IAM spans platform and organization scopes; all entry points explicitly authorize and filter.
