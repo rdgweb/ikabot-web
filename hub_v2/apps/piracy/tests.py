@@ -179,6 +179,7 @@ class PlanTests(Base):
 
 class EligibilityTests(Base):
     def test_accounts_without_fortress_or_job_stay_out(self):
+        Job.objects.filter(game_account=self.accounts[2]).update(status="error")       # N-263: an old job is no job
         Job.objects.filter(game_account=self.accounts[0]).delete()
         AccountSnapshot.objects.filter(game_account=self.accounts[1]).update(cities=[])
         token = activate(self.org)
@@ -188,6 +189,7 @@ class EligibilityTests(Base):
             deactivate(token)
         self.assertNotIn(self.accounts[0], able)
         self.assertNotIn(self.accounts[1], able)
+        self.assertNotIn(self.accounts[2], able)
         month = self.plan()
         self.assertFalse(month.members.filter(game_account__in=self.accounts[:2]).exists())
 

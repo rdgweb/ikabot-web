@@ -91,8 +91,10 @@ def eligible(server_id: str) -> list:
     from apps.jobs.models import Job
 
     accounts = accounts_on(server_id)
-    with_job = set(Job.objects.filter(game_account__in=accounts, action_code=PIRATE_ACTION)
-                   .exclude(status__in=("cancelled", "canceled", "failed", "completed", "done"))
+    # N-263: only a job that is running or will run (an old "finished"/"error" one counted: Blahh, coisa, Icarus and
+    # PacMan, whose Pirata Automático was cancelled on 23/11, joined the plan by it)
+    with_job = set(Job.objects.filter(game_account__in=accounts, action_code=PIRATE_ACTION,
+                                      status__in=("queued", "running", "scheduled"))
                    .values_list("game_account_id", flat=True))
     fortress = {s.game_account_id for s in AccountSnapshot.objects.filter(game_account__in=accounts)
                 if (_fortress_city(s.cities) or {}).get("level", 0) >= 1}
