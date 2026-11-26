@@ -46,6 +46,7 @@ def items(limit: int = LIMIT, *, platform: bool = False, user=None) -> list[dict
             out.append({'when': ticket.last_customer_at if support_platform else ticket.last_staff_at,
                         'icon':'bi-headset', 'tone':'', 'title':f'{ticket.code}: {ticket.subject}',
                         'note':'Chamado de suporte atualizado',
+                        'private': True,
                         'url':f'/suporte/{"atendimento/" if support_platform else ""}{ticket.pk}/'})
     notices = MessageAudit.objects.all() if platform else MessageAudit.objects.filter(game_account__isnull=False)
     for m in notices.order_by("-created_at")[:limit]:   # rows without an account are the platform's (system administrator)

@@ -184,3 +184,22 @@ class SupportTests(TestCase):
         self.client.force_login(self.owner)
         self.assertEqual(self.client.post('/suporte/novo/',{'body':'curto'}).status_code,400)
         self.assertEqual(Ticket.objects.count(),0)
+
+    def test_support_messages_fields_and_bell_respect_the_visibility_preference(self):
+        from apps.users.models import UserProfile
+        ticket,_=self.create()
+        UserProfile.objects.update_or_create(user=self.owner,defaults={'hide_private':True})
+        page=self.client.get(self.detail(ticket))
+        self.assertContains(page,'sup-message-body ik-pv')
+        self.assertContains(page,'class="ik-pv"')
+        self.assertIn('ik-private',page.content.decode().split('<body',1)[1].split('>',1)[0])
+        self.client.force_login(self.agent)
+        self.assertContains(self.client.get('/avisos/'),'class="ik-pv"')
+
+    def test_audit_records_ticket_actions_without_copying_conversation_content(self):
+        from apps.audit.models import AuditEvent
+        ticket,_=self.create(body='Conteudo privado que deve ficar somente na conversa.')
+        event=AuditEvent.objects.get(action='support.created',target_id=str(ticket.pk))
+        self.assertEqual(event.organization_id,self.org.pk)
+        self.assertEqual(event.category,'suporte')
+        self.assertNotIn('Conteudo privado',str(event.details))

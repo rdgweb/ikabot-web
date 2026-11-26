@@ -14,6 +14,11 @@ class TicketForm(forms.Form):
     context_path = forms.CharField(label='Página relacionada (opcional)', max_length=500, required=False,
                                   help_text='Exemplo: /game/. Parâmetros e fragmentos não serão enviados.')
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ('subject', 'body', 'context_path'):
+            self.fields[name].widget.attrs['class'] = 'ik-pv'
+
     def clean_context_path(self):
         value = self.cleaned_data['context_path'].strip()
         if not self.cleaned_data.get('include_context'):
@@ -30,7 +35,7 @@ class TicketForm(forms.Form):
 class ReplyForm(forms.Form):
     request_id = forms.UUIDField(widget=forms.HiddenInput, initial=uuid.uuid4)
     revision = forms.IntegerField(min_value=1, widget=forms.HiddenInput)
-    body = forms.CharField(label='Sua resposta', min_length=1, max_length=8000, widget=forms.Textarea(attrs={'rows': 5}))
+    body = forms.CharField(label='Sua resposta', min_length=1, max_length=8000, widget=forms.Textarea(attrs={'rows':5, 'class':'ik-pv'}))
 
 
 class ChangeForm(forms.Form):

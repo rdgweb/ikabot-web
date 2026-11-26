@@ -1,7 +1,7 @@
 {% for row in rows %}
 {% if row.url %}<a href="{{ row.url }}" class="ik-bell-row{% if row.new %} new{% endif %}">{% else %}<div class="ik-bell-row{% if row.new %} new{% endif %}">{% endif %}
   <span class="ik-bell-ico {{ row.tone }}"><i class="bi {{ row.icon }}"></i></span>
-  <span class="ik-bell-main"><b>{{ row.title }}</b><small>{{ row.note }} · {{ row.when|timesince }}</small></span>
+  <span class="ik-bell-main"><b{% if row.private %} class="ik-pv"{% endif %}>{{ row.title }}</b><small>{{ row.note }} · {{ row.when|timesince }}</small></span>
 {% if row.url %}</a>{% else %}</div>{% endif %}
 {% empty %}
 <div class="ik-bell-empty"><i class="bi bi-bell-slash"></i> Nada por aqui</div>

@@ -80,6 +80,9 @@ test('customer opens, follows and resolves support tickets on desktop and mobile
       if(process.env.SUPPORT_SCREENSHOT_DIR){fs.mkdirSync(process.env.SUPPORT_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.SUPPORT_SCREENSHOT_DIR,`support-${width}.png`),fullPage:true});}
       const overflow=await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>[el.tagName,el.className,Math.round(el.getBoundingClientRect().right)]).slice(0,12));
       assert.equal(await page.locator('body').evaluate(el=>el.scrollWidth>innerWidth),false,JSON.stringify(overflow));
+      await page.evaluate(()=>document.body.classList.add('ik-private'));
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('.sup-message-body')).filter==='blur(6px)');
+      await page.evaluate(()=>document.body.classList.remove('ik-private'));
     }catch(error){console.error('support customer state',width,state.stage,state.posts.map(p=>p.action||'create'),page.url());throw error;}finally{await browser.close();}
   }
 });

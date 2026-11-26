@@ -109,6 +109,7 @@ ACTIONS = {
     "organization.agent_off": ("plano", "Desligou o agente da plataforma de uma conta"),
 }
 CATEGORIES = {
+    "suporte": "Suporte",
     "acesso": "Acesso", "contas": "Contas", "nos": "Nós e máquinas", "proxies": "Proxies", "jobs": "Jobs",
     "controle": "Controle manual", "config": "Configurações", "usuarios": "Usuários", "credenciais": "Credenciais", "plano": "Plano",
 }
