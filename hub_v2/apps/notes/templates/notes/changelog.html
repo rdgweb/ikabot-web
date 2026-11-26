@@ -115,17 +115,23 @@
               <td><span class="badge {{ node.release_state.badge_class }}">{{ node.release_state.label }}</span></td>
               <td>
                 {% if node.supervisor_is_online %}<span class="badge badge-success">{{ node.docker_host.name }}</span>{% else %}<span class="badge badge-warning">Não instalado</span>{% endif %}
-                {% if node.latest_update %}<div class="mt-1 text-[11px] text-muted">Última: {{ node.latest_update.get_status_display }}</div>{% endif %}
+                {% if node.latest_update.status == 'queued' %}<div class="mt-1 text-[11px] text-muted">Na fila · {% if node.update_waiting_jobs %}aguardando {{ node.update_waiting_jobs }} job{{ node.update_waiting_jobs|pluralize }} terminar{{ node.update_waiting_jobs|pluralize:"em" }}{% else %}nó livre, atualiza em instantes{% endif %}</div>
+                {% elif node.latest_update %}<div class="mt-1 text-[11px] text-muted">Última: {{ node.latest_update.get_status_display }}</div>{% endif %}
               </td>
               <td class="text-right">
-                {% if node.release_state.code == 'outdated' and node.is_online and node.supervisor_is_online %}
+                {% if node.latest_update.status == 'queued' %}
+                  <form method="post" action="{% url 'accounts:node-cancel-update' node.pk %}" class="inline" hx-boost="false">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-secondary btn-sm"><i class="bi bi-x-circle"></i> Cancelar</button>
+                  </form>
+                {% elif node.release_state.code == 'outdated' and node.is_online and node.supervisor_is_online %}
                   <form method="post"
                         action="{% url 'accounts:node-request-update' node.pk %}"
                         class="inline"
                         hx-boost="false"
                         @submit.prevent.stop="$dispatch('confirm', {
                           title: 'Atualizar agente',
-                          message: 'O agente {{ node.name|escapejs }} será atualizado da versão v{{ node.agent_version|escapejs }} para v{{ agent_release.version|escapejs }}. O supervisor validará o novo container e fará rollback se ele não iniciar.',
+                          message: 'O agente {{ node.name|escapejs }} será atualizado da versão v{{ node.agent_version|escapejs }} para v{{ agent_release.version|escapejs }}. Se houver jobs em andamento, o nó para de pegar jobs novos e atualiza quando eles terminarem. O supervisor validará o novo container e fará rollback se ele não iniciar.',
                           confirmLabel: 'Atualizar agente',
                           style: 'primary',
                           onConfirm: () => $el.submit()

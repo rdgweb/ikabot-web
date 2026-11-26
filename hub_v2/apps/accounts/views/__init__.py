@@ -13,6 +13,7 @@ from .nodes import (
     NodeTokenRotateView,
     NodeProxyTestView,
     NodeQueuePurgeView,
+    NodeCancelUpdateView,
     NodeRequestUpdateView,
     PlatformNodeCreateView,
 )

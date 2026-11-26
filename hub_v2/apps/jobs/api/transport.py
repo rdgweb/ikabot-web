@@ -77,6 +77,11 @@ class JobClaimView(APIView):
 
             if not allows_work(node.organization):
                 slots = 0                       # N-124: plan not in order — the jobs wait, nothing is lost
+        if slots:
+            from apps.accounts.node_drain import is_draining
+
+            if is_draining(node):
+                slots = 0                       # N-261: an update is waiting for this node to be free
 
         jobs = []
         if slots:

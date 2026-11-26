@@ -234,6 +234,10 @@ class ChangeLogListView(LoginRequiredMixin, ListView):
                 agent_release.version,
             )
             node.latest_update = node.update_requests.order_by("-created_at").first()
+            if node.latest_update is not None and node.latest_update.status == "queued":
+                from apps.accounts.node_drain import busy_jobs
+
+                node.update_waiting_jobs = busy_jobs(node)       # N-261: what the queued update still waits for
 
         ctx.update(
             {
