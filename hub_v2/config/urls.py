@@ -72,6 +72,7 @@ urlpatterns = [
     path("users/convites/", InviteManageView.as_view(), name="invites"),
     # N-207: the bell at the top
     path("avisos/", BellListView.as_view(), name="bell-list"),
+    path("", include("apps.service_status.urls")),
     path("avisos/contador/", BellCountView.as_view(), name="bell-count"),
     # N-203: the system's administrator over every organization
     path("sistema/organizacoes/", OrganizationsView.as_view(), name="system-organizations"),

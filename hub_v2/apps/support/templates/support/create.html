@@ -1,6 +1,8 @@
 {% extends base_template|default:"base.html" %}
 {% block title %}Abrir chamado{% endblock %}
 {% block content %}{% include "support/_style.html" %}
+{% include 'service_status/_style.html' %}
+{% include 'service_status/banner.html' %}
 <div class="sup-shell"><header class="sup-hero"><div><h1><i aria-hidden="true" class="bi bi-chat-square-text"></i> Abrir chamado</h1><p><span class="ik-pv">{{ support_org.name }}</span> · Conte o que aconteceu. Você poderá acompanhar a conversa pelo Hub.</p></div><a href="{{ support_home }}" class="btn btn-secondary">Voltar ao suporte</a></header>
 <div class="sup-grid"><section class="sup-card"><form method="post" class="sup-form">
 {% csrf_token %}{{ form.non_field_errors }}{{ form.request_id }}

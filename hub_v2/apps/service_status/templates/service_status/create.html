@@ -1,0 +1,21 @@
+{% extends base_template|default:'base.html' %}
+{% block title %}{% if editing %}Editar rascunho{% else %}Novo aviso de serviço{% endif %}{% endblock %}
+{% block content %}{% include 'service_status/_style.html' %}
+<div class="sup-shell"><header class="sup-hero"><div><h1>{% if editing %}Editar rascunho{% else %}Novo aviso de serviço{% endif %}</h1><p>O rascunho não aparece para clientes. A publicação exige confirmação explícita.</p></div><a class="btn btn-secondary" href="{% url 'service-status:manage' %}">Voltar</a></header>
+  <form method="post" class="sup-card sup-form">{% csrf_token %}{{ form.non_field_errors }}
+  {% for field in form %}{% if field.is_hidden %}{{ field }}{{ field.errors }}{% else %}<div class="sup-field {% if field.name == 'components' %}status-checks{% endif %}">{{ field.label_tag }}{{ field }}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endif %}{% endfor %}
+  <p class="status-hint">Horários no fuso {{ TIME_ZONE_LABEL }}. A previsão é informativa; o aviso só encerra quando a equipe registrar a resolução.</p>
+  <div class="sup-actions"><button type="submit" name="action" value="draft" class="btn btn-secondary">Salvar rascunho</button><button type="submit" name="action" value="publish" class="btn btn-primary">Publicar para clientes</button></div></form>
+</div>
+<script>
+(() => {
+  const kind=document.getElementById('id_kind'), state=document.getElementById('id_status');
+  const sync=()=>{
+    const available=kind.value==='maintenance'?['scheduled','in_progress','monitoring','resolved','cancelled']:['investigating','identified','monitoring','resolved'];
+    for(const option of state.options){option.hidden=!available.includes(option.value);option.disabled=option.hidden;}
+    if(!available.includes(state.value))state.value=available[0];
+  };
+  kind.addEventListener('change',sync);sync();
+})();
+</script>
+{% endblock %}

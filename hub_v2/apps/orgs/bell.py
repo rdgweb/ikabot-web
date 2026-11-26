@@ -37,6 +37,11 @@ def items(limit: int = LIMIT, *, platform: bool = False, user=None) -> list[dict
     from core.templatetags.hub_tags import action_name
 
     out = []
+    from apps.service_status.services import published
+    for incident in published().filter(last_public_at__gte=timezone.now()-timedelta(days=30))[:5]:
+        out.append({'when':incident.last_public_at, 'icon':'bi-broadcast',
+                    'tone':'' if incident.closed else 'warn', 'title':incident.title,
+                    'note':incident.get_status_display(), 'url':f'/situacao/{incident.pk}/'})
     if user is not None:
         from apps.access_control.policy import allowed
         from apps.orgs.scope import current_organization

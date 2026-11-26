@@ -17,8 +17,9 @@ from .services import authorize, tickets_for, unread_for, create_ticket, change_
 
 
 def common(request, platform):
+    from apps.service_status.services import active
     prefix = 'platform' if platform else 'organization'
-    return {'platform_queue': platform, 'support_org':request.organization,
+    return {'platform_queue': platform, 'support_org':request.organization, 'service_incidents':list(active()[:10]),
             'can_write': allowed(request.user, prefix + '.support.manage', request.organization),
             'can_queue': allowed(request.user, 'platform.support.view'), 'states': Ticket.STATES,
             'categories': Ticket.CATEGORIES, 'support_home': reverse('support:queue' if platform else 'support:list')}

@@ -1,0 +1,8 @@
+{% extends base_template|default:'base.html' %}
+{% block title %}Incidentes e manutenções{% endblock %}
+{% block content %}{% include 'service_status/_style.html' %}
+<div class="sup-shell"><header class="sup-hero"><div><h1>Incidentes e manutenções</h1><p>Prepare o texto, publique e acompanhe cada atualização até o encerramento.</p></div><div class="sup-actions"><a class="btn btn-secondary" href="{% url 'service-status:list' %}">Visão dos clientes</a>{% if can_write %}<a class="btn btn-primary" href="{% url 'service-status:create' %}">Novo aviso</a>{% endif %}</div></header>
+  <p class="status-hint">Avisos publicados ficam visíveis a todos os usuários autenticados. Rascunhos são exclusivos da equipe autorizada. Não inclua informações internas ou dados de clientes.</p>
+  {% for incident in incidents %}{% include 'service_status/_card.html' with management=True %}{% empty %}<section class="sup-card sup-empty"><h2>Nenhum aviso cadastrado</h2><p>Crie um rascunho para preparar a comunicação antes de publicar.</p></section>{% endfor %}
+  {% include 'service_status/_pages.html' with page=incidents %}
+</div>{% endblock %}

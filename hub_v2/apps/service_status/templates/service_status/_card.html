@@ -1,0 +1,8 @@
+<article class="sup-card status-card {{ incident.severity }} {% if incident.closed %}resolved{% endif %}">
+  <div class="sup-actions"><span class="sup-chip">{{ incident.get_kind_display }}</span><span class="sup-chip {% if incident.closed %}resolved{% endif %}">{{ incident.get_status_display }}</span>{% if not incident.published_at %}<span class="sup-chip">Rascunho · só equipe</span>{% endif %}</div>
+  <h2 style="margin-top:12px"><a href="{% if management %}{% url 'service-status:manage-detail' incident.pk %}{% else %}{% url 'service-status:detail' incident.pk %}{% endif %}">{{ incident.title }}</a></h2>
+  <div class="status-components">{% for label in incident.component_labels %}<span class="sup-chip">{{ label }}</span>{% endfor %}</div>
+  <p class="sup-muted">Impacto informado: {{ incident.get_severity_display }}</p>
+  <div class="status-time"><span>Início: {{ incident.started_at|date:'d/m/Y H:i T' }}</span>{% if incident.scheduled_end %}<span>Previsão de término: {{ incident.scheduled_end|date:'d/m/Y H:i T' }}</span>{% endif %}{% if incident.resolved_at %}<span>Encerrado: {{ incident.resolved_at|date:'d/m/Y H:i T' }}</span>{% endif %}</div>
+  {% if incident.last_public_at %}<p class="sup-muted">Última atualização: {{ incident.last_public_at|date:'d/m/Y H:i T' }}</p>{% endif %}
+</article>

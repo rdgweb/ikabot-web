@@ -1,6 +1,7 @@
 """Explicit capabilities. Unknown permissions never grant access."""
 
 PLATFORM_AREAS = {
+    "incidents": "Incidentes e manutenções",
     "support": "Atendimento de suporte",
     "api": "Documentação da API", "access": "Permissões e acessos",
     "organizations": "Organizações", "notes": "Notas", "releases": "Atualizações",
@@ -41,6 +42,7 @@ def required_permission(path, method="GET"):
         write = True
     operation = "manage" if write else "view"
     routes = (
+        ("/settings/incidentes/", "platform.incidents"),
         ("/suporte/atendimento/", "platform.support"), ("/suporte/", "organization.support"),
         ("/users/permissoes/", "platform.access"),
         ("/users/convites/", "platform.invites"),

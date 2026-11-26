@@ -111,8 +111,8 @@ jobs:
 
       - name: Test support workflow, organization isolation and access
         run: |
-          python hub_v2/manage.py test apps.support.tests apps.orgs.tests_scope --settings=config.settings.test --noinput
-          TEST_MARIADB=1 python hub_v2/manage.py test apps.support.tests apps.orgs.tests_scope --settings=config.settings.test --noinput
+          python hub_v2/manage.py test apps.support.tests apps.service_status.tests apps.orgs.tests_scope --settings=config.settings.test --noinput
+          TEST_MARIADB=1 python hub_v2/manage.py test apps.support.tests apps.service_status.tests apps.orgs.tests_scope --settings=config.settings.test --noinput
 
       - name: Test piracy conversion board and donation network recovery
         run: |

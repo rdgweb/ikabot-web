@@ -1,0 +1,16 @@
+{% include 'support/_style.html' %}
+<style>
+.status-card{border-left:5px solid #bc9150}.status-card.outage{border-left-color:#ac4e43}.status-card.resolved{border-left-color:#6d8e55}.status-card h2{margin-bottom:9px}.status-message{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}.status-time{display:flex;gap:12px;flex-wrap:wrap;color:#756c5d;font-size:.9rem;margin:10px 0}.status-components{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.status-timeline{border-left:2px solid #d9c39c;padding-left:18px}.status-timeline article{padding:0 0 22px}.status-timeline h2{font-size:1rem;margin:0 0 5px}.status-banner{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:16px 20px;border:1px solid #d7b875;background:#fff5df;border-radius:12px;margin-bottom:20px}.status-banner div{min-width:0;overflow-wrap:anywhere}.status-banner p{margin:4px 0;color:#756c5d}.status-timeline p{margin:8px 0}.status-card h2 a{color:inherit}.status-hint{font-size:.9rem;color:#756c5d;margin:12px 0}.status-checks ul{padding:0;list-style:none}.status-checks label{display:flex;gap:8px;font-weight:400}.status-checks input{width:auto!important;flex:none}.sup-form input[type=checkbox]{width:auto!important}
+</style>
+<script>
+(() => {
+  if(window.ikStatusErrorsReady)return;
+  window.ikStatusErrorsReady=true;
+  document.addEventListener('htmx:beforeSwap',event=>{
+    const url=new URL(event.detail.xhr.responseURL,location.href);
+    if([400,409].includes(event.detail.xhr.status)&&url.origin===location.origin&&url.pathname.startsWith('/settings/incidentes/')){
+      event.detail.shouldSwap=true;event.detail.isError=false;
+    }
+  });
+})();
+</script>

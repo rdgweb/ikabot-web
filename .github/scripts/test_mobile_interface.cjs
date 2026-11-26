@@ -39,6 +39,9 @@ async function setup(width, preference=null, noStorage=false) {
     }
     if(url.pathname==='/api/schema/')return route.fulfill({contentType:'application/json',body:JSON.stringify(fixtures.schema)});
     if(url.pathname==='/jobs/new/')return route.fulfill({contentType:'text/html',body:fixtures.job_forms[state.form].html});
+    if(request.method()==='POST' && url.pathname.startsWith('/settings/incidentes/')){
+      return route.fulfill({status:url.pathname.endsWith('/novo/')?400:409,contentType:'text/html',body:url.pathname.endsWith('/novo/')?fixtures.status_invalid:fixtures.status_stale});
+    }
     const key=url.pathname+url.search;
     if(!fixtures.pages[key])return route.fulfill({status:204,body:''});
     const hx=request.headers()['hx-request']==='true';
@@ -142,6 +145,8 @@ test('all menu pages and representative forms fit phone viewports',async()=>{
         if(report.actual>width+2)failures.push({width,target,...report});
         if(width===390 && target==='/')await capture(page,'mobile-dashboard');
         if(width===390 && target==='/suporte/')await capture(page,'mobile-support');
+        if(width===390 && target==='/situacao/')await capture(page,'mobile-status');
+        if(width===390 && target==='/settings/incidentes/novo/')await capture(page,'mobile-status-create');
         if(width===390 && /^\/profiles\/presets\/[a-f0-9-]+\/$/.test(target))await capture(page,'mobile-preset');
       }
       await page.goto('http://mobile.test/');
@@ -167,4 +172,28 @@ test('all menu pages and representative forms fit phone viewports',async()=>{
   }
   if(process.env.MOBILE_AUDIT_REPORT){fs.mkdirSync(path.dirname(process.env.MOBILE_AUDIT_REPORT),{recursive:true});fs.writeFileSync(process.env.MOBILE_AUDIT_REPORT,JSON.stringify(failures,null,2));}
   assert.equal(failures.length,0,JSON.stringify(failures));
+});
+
+test('service notices retain validation feedback through HTMX on phone and desktop',async()=>{
+  for(const width of [390,1440]){
+    const {browser,page}=await setup(width);
+    try{
+      await page.goto('http://mobile.test/settings/incidentes/novo/');
+      await page.getByLabel('Título',{exact:true}).fill('Aviso preservado no formulário');
+      await page.getByLabel('Tipo de aviso',{exact:true}).selectOption('incident');
+      await page.getByLabel('Hub',{exact:true}).check();
+      await page.getByLabel('Situação',{exact:true}).selectOption('investigating');
+      await page.getByLabel('Início do incidente ou da manutenção',{exact:true}).fill('2026-11-20T10:00');
+      await page.getByLabel('Mensagem para os clientes',{exact:true}).fill('Texto para os clientes preservado após a validação.');
+      await page.getByRole('button',{name:'Publicar para clientes',exact:true}).click();
+      await page.getByText('Confirme a publicação do aviso para os clientes.',{exact:true}).waitFor();
+      assert.equal(await page.getByLabel('Título',{exact:true}).inputValue(),'Aviso preservado no formulário');
+      await page.goto('http://mobile.test'+fixtures.status_detail);
+      await page.getByLabel('Atualização para os clientes',{exact:true}).fill('Mensagem preservada após o erro de validação.');
+      await page.getByLabel('Conferi o texto',{exact:false}).check();
+      await page.getByRole('button',{name:'Publicar atualização',exact:true}).click();
+      await page.getByRole('alert').filter({hasText:'Este aviso recebeu outra atualização'}).waitFor();
+      assert.equal(await page.getByLabel('Atualização para os clientes',{exact:true}).inputValue(),'Mensagem preservada após o erro de validação.');
+    }finally{await browser.close();}
+  }
 });

@@ -1,0 +1,11 @@
+{% extends base_template|default:'base.html' %}
+{% block title %}Situação do serviço{% endblock %}
+{% block content %}{% include 'service_status/_style.html' %}
+<div class="sup-shell">
+  <header class="sup-hero"><div><h1><i class="bi bi-activity" aria-hidden="true"></i> Situação do serviço</h1><p>Avisos de incidentes e manutenções publicados pela equipe do Hub.</p></div><div class="sup-actions">{% if can_manage %}<a class="btn btn-secondary" href="{% url 'service-status:manage' %}">Gerenciar avisos</a>{% endif %}<a class="btn btn-secondary" href="{% url 'support:list' %}">Suporte</a></div></header>
+  <h2 class="text-lg font-semibold mb-4">Em acompanhamento</h2>
+  {% for incident in active_incidents %}{% include 'service_status/_card.html' %}{% empty %}<section class="sup-card"><h2>Nenhum incidente ou manutenção em acompanhamento</h2><p class="sup-muted">Não há avisos ativos publicados pela equipe. Esta página não representa monitoramento automático de todos os componentes.</p></section>{% endfor %}
+  <h2 class="text-lg font-semibold mb-4">Histórico</h2>
+  {% for incident in history %}{% include 'service_status/_card.html' %}{% empty %}<p class="sup-muted">Nenhum aviso encerrado foi publicado.</p>{% endfor %}
+  {% include 'service_status/_pages.html' with page=history %}
+</div>{% endblock %}

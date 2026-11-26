@@ -8,6 +8,8 @@
     <div class="sup-actions">{% if platform_queue %}<a href="{% url 'support:list' %}" class="btn btn-secondary">Minha organização</a>{% else %}{% if can_queue %}<a href="{% url 'support:queue' %}" class="btn btn-secondary">Fila de atendimento</a>{% endif %}{% if can_write %}<a href="{% url 'support:create' %}" class="btn btn-primary"><i aria-hidden="true" class="bi bi-plus-lg"></i> Abrir chamado</a>{% endif %}{% endif %}</div>
   </header>
   <div class="sup-summary"><span class="sup-chip">{{ active_count }} em acompanhamento</span><span class="sup-chip resolved">{{ counts.resolved|default:0 }} resolvido(s)</span></div>
+  {% include 'service_status/_style.html' %}
+  {% include 'service_status/banner.html' %}
   <section class="sup-card"><form method="get" class="sup-form sup-filters">
     <div><label for="support-search">Buscar</label><input id="support-search" name="q" value="{{ q }}" placeholder="Assunto ou código{% if platform_queue %}, organização{% endif %}"></div>
     <div><label for="support-status">Estado</label><select id="support-status" name="status"><option value="active" {% if status_filter == 'active' %}selected{% endif %}>Em acompanhamento</option><option value="all" {% if status_filter == 'all' %}selected{% endif %}>Todos</option>{% for key,label in states %}<option value="{{ key }}" {% if status_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
