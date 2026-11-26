@@ -30,6 +30,17 @@
   .pp-mx .ok { background: rgba(63,138,90,.14); color: #2f6b3a; } .pp-mx .lock { background: rgba(201,146,46,.16); color: #8a6420; }
   .pp-mx .go { background: rgba(79,134,185,.15); color: #2d5f8f; } .pp-mx .wait { background: rgba(140,128,110,.13); color: var(--ik-ink); }
   .pp-mx .no { color: #b3a68f; }
+  .pp-tree { display: flex; flex-direction: column; gap: .3rem; }
+  .pp-trow { display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1.6fr); gap: .6rem; align-items: center;
+             padding: .4rem .6rem; margin-left: calc(var(--d) * 1.4rem); border-left: 4px solid var(--c); border-radius: 8px; background: #fffefb; border-top: 1px solid var(--ik-line); }
+  .pp-trow.champ { background: rgba(201,156,78,.12); }
+  .pp-trow.out { opacity: .75; border-left-style: dashed; }
+  .pp-trow .nm { font-size: .86rem; font-weight: 600; color: var(--ik-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pp-trow .pt { font-family: Rajdhani, sans-serif; font-weight: 700; font-size: 1.05rem; text-align: right; color: var(--ik-ink); }
+  .pp-trow .pt small { display: block; font-family: inherit; font-weight: 400; font-size: .66rem; color: var(--ik-muted); }
+  .pp-trow .tx { font-size: .76rem; color: var(--ik-muted); }
+  .pp-trow .tx em { display: block; font-style: normal; color: #8a6420; }
+  @media (max-width: 700px) { .pp-trow { grid-template-columns: 1fr; margin-left: calc(var(--d) * .7rem); } .pp-trow .pt { text-align: left; } }
   .pp-node .t { font-size: .68rem; color: var(--ik-muted); margin-top: .15rem; } .pp-node .t.old { color: #b5523b; }
   @media (max-width: 1000px) { .pp-kpis { grid-template-columns: 1fr 1fr; } }
   .pp-card { background: var(--ik-paper, #fffdf8); border: 1px solid var(--ik-line); border-radius: 16px; }
@@ -147,18 +158,6 @@
 </div>
 {% endif %}
 
-{% if chain.agenda %}
-<div class="pp-day">
-  {% for d in chain.agenda %}
-  <div class="pp-card"><span class="pp-crown" style="width: 36px; height: 36px; font-size: 1rem;"><i class="bi bi-calendar-check"></i></span>
-    <div class="tl">{% if d.passer %}<b>{{ d.passer.name }}</b>
-      <span class="pp-sub">{% if d.collecting %}recolhendo{% else %}recolhe às {{ d.collect }}{% endif %}{% if d.sources %} · {{ d.sources }} orige{{ d.sources|pluralize:"m,ns" }}{% endif %}</span>
-      <i class="bi bi-arrow-right"></i><b>{{ d.champion.name }}</b><span class="pp-sub">entrega {{ d.deliver }}</span>
-      {% else %}<b>{{ d.champion.name }}</b><span class="pp-sub">sem passagem hoje · rouba direto</span>{% endif %}</div></div>
-  {% endfor %}
-</div>
-{% endif %}
-
 <div class="pp-main">
   <section class="pp-card pp-sec">
     <h2>Corrente</h2>
@@ -190,34 +189,22 @@
   </section>
 </div>
 
-{% if chain.crew_plan %}
-<section class="pp-card pp-sec" style="margin-top: .9rem; overflow-x: auto;">
-  <h2>Plano de tripulação</h2>
-  <table class="pp-mx" style="min-width: 640px; table-layout: auto;">
-    <tr><th style="text-align: left;">Dia</th><th style="text-align: left;">Passagem → campeã</th><th>Força agora</th><th>Meta</th><th>Teto</th><th style="text-align: left;">Recolhe</th><th>Ação</th></tr>
-    {% for r in chain.crew_plan %}
-    <tr><td class="who">{% if r.day == 0 %}hoje{% elif r.day == 1 %}amanhã{% else %}{{ r.date|date:"d/m" }}{% endif %}</td>
-      <td class="who">{{ r.passer.name }} → {{ r.champion.name }}</td>
-      <td>{{ r.now|default_if_none:"?"|intcomma }}</td><td>{{ r.target|default_if_none:"—"|intcomma }}</td><td>{{ r.cap|default_if_none:"—"|intcomma }}</td>
-      <td class="who" style="font-weight: 400;">{% for o in r.sources %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}{% if r.left_out %}<small>acima do teto: {% for o in r.left_out %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</small>{% endif %}</td>
-      <td class="{% if r.convert is None %}lock{% elif r.convert %}wait{% else %}ok{% endif %}">{% if not r.target %}—{% elif r.convert is None %}não alcança{% elif r.convert %}converte {{ r.convert|intcomma }} até {{ r.by|date:"d H:i" }}{% else %}pronta{% endif %}</td></tr>
+{% if chain.tree %}
+<section class="pp-card pp-sec" style="margin-top: .9rem;">
+  <h2>Corrente de hoje</h2>
+  <p class="pp-sub" style="margin: 0 0 .6rem;">Quem leva os pontos de quem até as campeãs · entrega às {{ chain.deliver_at }} · horários no hub</p>
+  <div class="pp-tree">
+    {% for r in chain.tree %}
+    <div class="pp-trow{% if r.champion %} champ{% endif %}{% if r.unreached %} out{% endif %}" style="--d: {{ r.depth }}; --c: {{ r.color }};">
+      <span class="nm">{% if r.depth %}<i class="bi bi-arrow-return-right"></i>{% elif r.champion %}<i class="bi bi-trophy-fill"></i>{% endif %} {{ r.ga.name }}</span>
+      <span class="pt">{{ r.points|intcomma }}<small>força {{ r.power|default_if_none:"?"|intcomma }}</small></span>
+      <span class="tx">
+        {% if r.champion %}campeã{% elif r.unreached %}{{ r.why }}{% else %}{% if r.below %}abaixo do mínimo · {% endif %}{% if r.send %}sai {{ r.send }} · chega {{ r.lands }}{% endif %}{% if r.carries %} · recolhe {{ r.carries }} a partir de {{ r.collect }}{% endif %}{% endif %}
+        {% if r.builder %}<em>converte {{ r.builder.convert|intcomma }} aos poucos para alcançar {{ r.builder.for.name }} (força {{ r.builder.target|intcomma }})</em>{% endif %}
+      </span>
+    </div>
     {% endfor %}
-  </table>
-</section>
-{% endif %}
-
-{% if chain.matrix.rows %}
-<section class="pp-card pp-sec" style="margin-top: .9rem; overflow-x: auto;">
-  <h2>Quem rouba quem hoje</h2>
-  <div class="pp-legend"><span><i style="background: rgba(63,138,90,.4);"></i>pode agora</span><span><i style="background: rgba(201,146,46,.45);"></i>par livre em</span>
-    <span><i style="background: rgba(79,134,185,.45);"></i>assalto a caminho</span><span><i style="background: rgba(140,128,110,.35);"></i>na hora marcada</span></div>
-  <table class="pp-mx" style="min-width: {{ chain.matrix.targets|length|add:1 }}00px;">
-    <tr><th style="width: 110px;"></th>{% for t in chain.matrix.targets %}<th title="{{ t.ga.name }} · {{ t.role }}">{{ t.ga.name }}<small>{{ t.points|intcomma }}</small></th>{% endfor %}</tr>
-    {% for row in chain.matrix.rows %}
-    <tr><td class="who">{{ row.ga.name }}<small>{{ row.role }}</small></td>
-      {% for c in row.cells %}<td class="{{ c.kind }}" title="{{ c.title }}">{{ c.text }}</td>{% endfor %}</tr>
-    {% endfor %}
-  </table>
+  </div>
 </section>
 {% endif %}
 

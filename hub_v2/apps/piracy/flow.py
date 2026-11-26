@@ -1,13 +1,6 @@
-"""The plan's day (N-263): how the capture points reach the champions every day.
-
-1. The day turns at month.turn_hour on the game's clock (GAME_TZ); the champions empty their passers DELIVER_MARGIN before it.
-2. A 3-day agenda (the pair rule's length) is drawn at the start of each block: every day each champion has its passer
-   of the day — another lobby, the pair free on the day it delivers, each passer once per block for the same champion.
-3. A champion raids an origin of another lobby directly only from month.direct_points, and never an account that is
-   still to be its passer in the block (the pair would be locked on that day). Below it the origin waits for a passer;
-   an origin no passer of the day can take goes to the champion from month.min_points.
-4. A passer collects only in the window before its delivery: deliver_at - (raids it makes x the time each raid takes).
-5. An account that gets a Pirate Fortress and its job joins the plan as an origin and the next agenda.
+"""The plan's day (N-263): when it turns (month.turn_hour on the game's clock, GAME_TZ), when the champions are
+delivered (DELIVER_MARGIN before it), who is in the plan (the accounts whose Pirate Fortress job is active) and how
+long a raid takes. Who takes whom each day is the day's tree (tree.py).
 
 Fixed by the game: the same lobby never raids itself; the same raider takes from the same account once in pair_days;
 a conversion only protects the points when it is over.
@@ -15,12 +8,11 @@ a conversion only protects the points when it is over.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from django.utils import timezone
 
-from .models import PiracyMember, PiracyMonth, PiracyRoute
+from .models import PiracyMember, PiracyRoute
 
 GAME_TZ = ZoneInfo("Europe/Berlin")   # the game's clock (GMT+1 in the winter, as the game shows); the page shows the hub's
 DELIVER_MARGIN = timedelta(hours=1)   # the champions' raids on their passers land this long before the day turns
@@ -51,12 +43,6 @@ def day_number(month, now: datetime | None = None) -> int:
     return max(0, (day_start(month, now) - day_start(month, month.starts_at)).days)
 
 
-def _block(month, now=None) -> tuple[int, int]:
-    """(block number, day inside it)."""
-    length = max(1, month.pair_days or 3)
-    return divmod(day_number(month, now), length)
-
-
 # ── the members ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 def join_new(month) -> int:
@@ -78,181 +64,6 @@ def join_new(month) -> int:
         PiracyMember._base_manager.filter(pk__in=gone).delete()
         changed += len(gone)
     return changed
-
-
-def _stored(month) -> list:
-    return list(month.members.select_related("game_account__account").order_by("id"))
-
-
-def champions_of(month) -> list:
-    return [m.game_account for m in _stored(month) if m.role == PiracyMember.CHAMPION]
-
-
-def others_of(month) -> list:
-    return [m.game_account for m in _stored(month) if m.role != PiracyMember.CHAMPION]
-
-
-# ── the agenda ────────────────────────────────────────────────────────────────────────────────────────────────────
-
-def last_raid(month, raider, target):
-    """When this raider last took (or tried) from this account in any plan (the pair rule follows the game)."""
-    route = (PiracyRoute._base_manager.filter(raider=raider, target=target).exclude(status=PiracyRoute.SKIPPED)
-             .order_by("-created_at").first())
-    return route.created_at if route else None
-
-
-def _free_on(month, raider, target, when) -> bool:
-    last = last_raid(month, raider, target)
-    return last is None or last + timedelta(days=month.pair_days or 3) <= when
-
-
-def _able(month, passer, others) -> int:
-    """How many accounts of another lobby the passer can beat, converting its own points if needed."""
-    from . import services
-
-    mine = services.strength(passer)
-    count = 0
-    for ga in others:
-        if ga.pk == passer.pk or ga.account_id == passer.account_id:
-            continue
-        if services._convert_to_win(month, mine, services.strength(ga), None) is not None:
-            count += 1
-    return count
-
-
-def build_block(month, number: int, fixed: list[dict] | None = None) -> list[dict]:
-    """The agenda of one block: for each of its days, {champion pk: passer pk} (a champion may have none).
-    fixed: the days already decided (kept as they are; only the ones after them are drawn)."""
-    champions, others = champions_of(month), others_of(month)
-    length = max(1, month.pair_days or 3)
-    first = day_start(month, month.starts_at) + timedelta(days=number * length)
-    served = {}
-    for key, days in (month.turns or {}).items():
-        if key.startswith("block:"):
-            for day in days:
-                for passer in day.values():
-                    served[passer] = served.get(passer, 0) + 1
-    able = {ga.pk: _able(month, ga, others) for ga in others}
-    fixed = list(fixed or [])[:length]
-    plan = {(d, c.pk): int(day[str(c.pk)]) if str(day[str(c.pk)]).isdigit() else next(
-        (p.pk for p in others if str(p.pk) == day[str(c.pk)]), None)
-        for d, day in enumerate(fixed) for c in champions if str(c.pk) in day}
-    plan = {k: v for k, v in plan.items() if v is not None}
-    slots = [(d, c) for d in range(len(fixed), length) for c in champions]
-    best = {"filled": -1, "plan": dict(plan)}
-
-    def options(d, champion):
-        deliver = first + timedelta(days=d + 1) - DELIVER_MARGIN
-        taken_today = {plan.get((d, c.pk)) for c in champions}
-        mine = {plan.get((x, champion.pk)) for x in range(length)}
-        # the ability to beat the others only orders them: the points it converts with come in during the day
-        out = [p for p in others if p.account_id != champion.account_id and p.pk not in taken_today
-               and p.pk not in mine and _free_on(month, champion, p, deliver)]
-        return sorted(out, key=lambda p: (served.get(str(p.pk), 0), -able[p.pk], p.name or "", str(p.pk)))
-
-    def walk(i, filled):
-        if filled + (len(slots) - i) <= best["filled"]:
-            return
-        if i == len(slots):
-            best.update(filled=filled, plan=dict(plan))
-            return
-        d, champion = slots[i]
-        for p in options(d, champion)[:4]:
-            plan[(d, champion.pk)] = p.pk
-            walk(i + 1, filled + 1)
-            del plan[(d, champion.pk)]
-        walk(i + 1, filled)
-
-    walk(0, 0)
-    return [{str(c.pk): str(best["plan"][(d, c.pk)]) for c in champions if (d, c.pk) in best["plan"]}
-            for d in range(length)]
-
-
-def replan_rest(month, now: datetime | None = None) -> None:
-    """The days after today are drawn again — the rest of this block and the next one (a champion took a future
-    passer of its directly: the pair is locked on that passer's day, so another account takes the day)."""
-    number, day = _block(month, now)
-    days = agenda(month, now)
-    turns = dict(month.turns or {})
-    turns.pop(f"block:{number + 1}", None)
-    turns[f"block:{number}"] = build_block(month, number, fixed=days[:day + 1])
-    month.turns = turns
-    if month.pk:
-        PiracyMonth._base_manager.filter(pk=month.pk).update(turns=turns)
-
-
-def agenda(month, now: datetime | None = None) -> list[dict]:
-    """The running block's agenda, drawn once (kept in month.turns)."""
-    number, _day = _block(month, now)
-    key = f"block:{number}"
-    turns = dict(month.turns or {})
-    if key not in turns:
-        turns[key] = build_block(month, number)
-        month.turns = turns
-        if month.pk:
-            PiracyMonth._base_manager.filter(pk=month.pk).update(turns=turns)
-    return turns[key]
-
-
-def today(month, now: datetime | None = None) -> dict:
-    """{champion pk: passer pk} of the day (strings)."""
-    _number, day = _block(month, now)
-    days = agenda(month, now)
-    return days[day] if day < len(days) else {}
-
-
-def upcoming(month, now: datetime | None = None) -> list[dict]:
-    """The passer days from today on: the rest of this block and the whole next one (drawn ahead, so an account that
-    passes at the start of the next block converts in the days before). [{"offset": days from today, "start": when
-    that day begins, "champion": pk, "passer": pk}] (strings)."""
-    now = now or timezone.now()
-    number, day = _block(month, now)
-    length = max(1, month.pair_days or 3)
-    today_start = day_start(month, now)
-    out = []
-    for index, row in enumerate(agenda(month, now)):
-        if index >= day:
-            for champion, passer in row.items():
-                out.append({"offset": index - day, "start": today_start + timedelta(days=index - day),
-                            "champion": champion, "passer": passer})
-    following = today_start + timedelta(days=length - day)          # the first day of the next block
-    if not month.ends_at or following < month.ends_at:
-        for index, row in enumerate(agenda(month, following + timedelta(hours=1))):
-            for champion, passer in row.items():
-                out.append({"offset": length - day + index, "start": following + timedelta(days=index),
-                            "champion": champion, "passer": passer})
-    return out
-
-
-def still_to_pass(month, champion, now: datetime | None = None) -> set:
-    """Accounts to be this champion's passer after today and within pair_days (this block or the next) — it never
-    raids them directly (the pair would still be locked on that day) unless they hold too much (see
-    services.champion_may_take)."""
-    now = now or timezone.now()
-    locked_until = now + timedelta(days=month.pair_days or 3)          # a raid now locks the pair until then
-    return {row["passer"] for row in upcoming(month, now) if row["offset"] >= 1 and row["champion"] == str(champion.pk)
-            and row["start"] + timedelta(days=1) - DELIVER_MARGIN < locked_until}
-
-
-def members_today(month, now: datetime | None = None) -> list:
-    """The month's accounts with their role today: champions, the passers of the day, and the origins."""
-    stored = _stored(month)
-    passers = set(today(month, now).values())
-    out = []
-    for m in stored:
-        role = m.role if m.role == PiracyMember.CHAMPION else (
-            PiracyMember.PASSER if str(m.game_account_id) in passers else PiracyMember.ORIGIN)
-        out.append(SimpleNamespace(game_account=m.game_account, game_account_id=m.game_account_id, group=m.group or 1,
-                                   role=role))
-    return out
-
-
-def champion_of(month, passer, now: datetime | None = None):
-    """The champion this passer delivers to today (its pk as a string), or None."""
-    for champion, p in today(month, now).items():
-        if p == str(passer.pk):
-            return champion
-    return None
 
 
 # ── the times ─────────────────────────────────────────────────────────────────────────────────────────────────────

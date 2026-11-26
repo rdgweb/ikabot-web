@@ -20,7 +20,10 @@ from datetime import datetime, timedelta, timezone as datetime_timezone
 from django.db import transaction
 from django.utils import timezone
 
+from types import SimpleNamespace
+
 from . import flow
+from . import tree as daytree
 from .models import PiracyChampion, PiracyMember, PiracyMonth, PiracyRoute, PiracyTarget
 
 PIRATE_ACTION = 17
@@ -222,9 +225,13 @@ def next_rotation(month, now: datetime | None = None):
 
 
 def members_now(month, now: datetime | None = None) -> list:
-    """The month's accounts with their role now: the champions, the passers of the day (the 3-day agenda) and the
-    origins — see flow."""
-    return flow.members_today(month, now)
+    """N-263: the month's accounts with their role in the day's tree: the champions, the ones that carry others today
+    (passers) and the rest (origins) — see tree."""
+    return members_of(daytree.build(month, now))
+
+
+def members_of(t) -> list:
+    return [SimpleNamespace(game_account=n.ga, game_account_id=n.pk, group=1, role=n.role) for n in t.nodes.values()]
 
 
 def at_raid(month, crew: int | None, points: int | None) -> int | None:
@@ -722,152 +729,34 @@ def plan_for(game_account, now: datetime | None = None, fresh: dict | None = Non
         return {"member": member, "month": month, "members": [], "role": member.role, "hold": True, "final": False,
                 "waiting": True, "convert_all": False, "share_percent": 0, "share_every_hours": month.share_every_hours,
                 "crew_cap": None, "crew_floor": None}
-    now_members = members_now(month, now)
-    role = next((m.role for m in now_members if m.game_account_id == game_account.pk), member.role)
+    fresh_read = {game_account.pk: {**strength(game_account), **fresh}} if fresh else {}
+    t = daytree.build(month, now, read=fresh_read)
+    node = t.node(game_account)
+    role = node.role if node is not None else member.role
     hold = role != PiracyMember.CHAMPION
-    out = {"member": member, "month": month, "members": now_members, "role": role, "hold": hold, "final": False,
-           "convert_all": not hold, "share_percent": month.share_percent if role == PiracyMember.ORIGIN else 0,
+    out = {"member": member, "month": month, "members": members_of(t), "tree": t, "role": role, "hold": hold,
+           "final": False, "convert_all": not hold, "share_percent": month.share_percent if hold else 0,
            "share_jitter": [SHARE_JITTER_DOWN, SHARE_JITTER_UP], "preconvert_points": 0, "preconvert_target": "",
            "convert_total": None, "convert_by": 0, "convert_target": None,
            "share_every_hours": month.share_every_hours, "crew_cap": None, "crew_floor": None, "base_cap": None,
            "bonus_max": CREW_BONUS_MAX, "bonus_full": CREW_BONUS_FULL}
-    if hold:
-        read = {m.game_account_id: strength(m.game_account) for m in now_members if m.group == member.group}
-        if fresh:
-            read[game_account.pk] = {**read.get(game_account.pk, {}), **fresh}
-        mine_budget = budgets(month, {k: v["crew"] for k, v in read.items()},
-                              {k: v["points"] for k, v in read.items() if v["points"] is not None}).get(game_account.pk) or {}
-        out.update(crew_cap=mine_budget.get("cap"), crew_floor=None, base_cap=mine_budget.get("cap_base"))
-        # N-263: the crew plan — the agenda says who passes and when; until that day the account converts, a part at
-        # each mission, what makes its strength beat the origins it collects then (convert_total by convert_by); it
-        # stops there or at the crew its own raiders still beat, and converts nothing of what it collects for its
-        # champion. The others keep the plan's 1-3% a day, also a part at each mission.
-        conv = conversion_plan(month, game_account, now_members, read.get(game_account.pk) or {},
-                               out["base_cap"] if role == PiracyMember.ORIGIN else None, now)
-        if conv is not None:
-            out.update(share_percent=0, convert_total=conv["total"], convert_by=int(conv["by"].timestamp()),
-                       convert_target=conv["target"], preconvert_target=conv["why"])
+    if hold and node is not None:
+        # N-263: it stays beatable by whoever takes it today (cap); it converts nothing of what it collects for its
+        # champion; one that can reach an account no chain reaches converts, a part at each mission, to the strength
+        # that does; the others keep the plan's 1-3% a day, a part at each mission
+        cap = daytree.cap_of(month, node)
+        out.update(crew_cap=cap, base_cap=cap - CREW_BONUS_MAX if cap is not None else None)
+        builder = t.builders.get(node.pk)
+        if node.children and node.collect_from is not None and now >= node.collect_from:
+            out.update(share_percent=0, convert_total=0, preconvert_target="recolhendo para a campeã")
+        elif builder is not None:
+            out.update(share_percent=0, convert_total=builder["convert"], convert_target=builder["target"],
+                       convert_by=int(turn_end(month, now).timestamp()),
+                       preconvert_target=f"alcançar {builder['for'].name} (força {builder['target']})")
         # in the final phase of the ranking (the points count for the position at the turn) nobody converts
         if _final_phase(game_account):
             out.update(share_percent=0, crew_floor=None, final=True, preconvert_points=0, convert_total=0)
     return out
-
-
-def _convert_to_win(month, mine: dict, theirs: dict, base_cap) -> int | None:
-    """N-254: the capture points a passer converts so it beats this account with the month's chance (0: it already
-    does; None: no amount does). Only the points above the bonus limit raise the strength, and the base never goes
-    above what lets its champion still beat it (base_cap)."""
-    if mine.get("crew") is None or theirs.get("crew") is None:
-        return None
-    if sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
-        return 0
-    if mine.get("points") is None:
-        return None
-    need = int(theirs["crew"] * ratio_for(month.min_win_percent)) + 1
-    return convert_for(mine["crew"] - crew_bonus(mine["points"]), int(mine["points"]), need, base_cap)
-
-
-def passer_need(month, champion, passer, members, fresh: dict | None = None) -> dict:
-    """N-263: the crew plan of one passer of the day — the strength to have at its raids on the origins of its
-    champion's lobby (the ones the champion never takes directly), each holding min_points or more then (the bonus).
-    Not "beat them all": the strength that brings the most points for the least conversion — an origin with a crew
-    out of reach (ScorpiO 7.052 after converting by hand) does not raise the bar for the others. Never above what its
-    champion still beats while it carries the points (cap).
-    {"target", "now", "convert" (points to convert now; None: its points reach no origin), "cap", "sources" (the
-    origins it beats at the target), "left_out" (the ones above it: another way or another day)}."""
-    ratio = ratio_for(month.min_win_percent)
-    mine = {**strength(passer), **(fresh or {})}
-    champ = strength(champion)["crew"]
-    cap = int(champ / ratio) if champ else None             # the strength it may have when its champion raids it
-    origins = []
-    for m in members:
-        o = m.game_account
-        if m.role != PiracyMember.ORIGIN or o.account_id != champion.account_id or o.account_id == passer.account_id:
-            continue
-        theirs = strength(o)
-        if theirs["crew"] is None:
-            continue
-        need = int(at_raid(month, theirs["crew"], theirs["points"]) * ratio) + 1
-        origins.append((need, max(int(theirs["points"] or 0), 0), o))
-    origins.sort(key=lambda item: item[0])
-    out = {"target": None, "now": mine.get("crew"), "convert": None, "cap": cap, "sources": [],
-           "left_out": [o for _n, _p, o in origins]}
-    if not origins:
-        out["convert"] = 0
-        return out
-    points = int(mine.get("points") or 0)
-    base = mine["crew"] - crew_bonus(points) if mine.get("crew") is not None else None
-    cap_base = cap - CREW_BONUS_MAX if cap is not None else None   # it carries the collection when emptied
-    best = None
-    for need, _p, _o in origins:
-        if cap is not None and need > cap:
-            break
-        if base is None:
-            break
-        convert = 0 if mine["crew"] >= need else convert_for(base, points, need, cap_base)
-        if convert is None:
-            continue
-        gain = sum(p for n, p, _o in origins if n <= need) - convert
-        if best is None or gain > best[0]:
-            best = (gain, need, convert)
-    if best is None:
-        out["target"] = origins[0][0]                        # not even the weakest: shown as out of reach
-        return out
-    _gain, target, convert = best
-    out.update(target=target, convert=convert, sources=[o for n, _p, o in origins if n <= target],
-               left_out=[o for n, _p, o in origins if n > target])
-    return out
-
-
-def conversion_plan(month, game_account, members, mine: dict, base_cap, now: datetime | None = None) -> dict | None:
-    """N-263: what this account converts until its next day as a passer (this block or the next) — None when it has
-    none ahead (it keeps the plan's daily share). The agent converts it a part at each mission, so that the strength
-    is there on that day: {"total": points still to convert (0: stop), "by": when it must be there, "target", "why"}.
-    It stops at the strength or at the crew its own raiders still beat, and converts nothing while it collects (what
-    it holds then is its champion's)."""
-    now = now or timezone.now()
-    rows = crew_plan(month, now)
-    row = next((r for r in rows if r["passer"].pk == game_account.pk), None)
-    if row is None or not row["target"]:
-        return None
-    out = {"total": 0, "by": row["by"], "target": row["target"], "why": f"as origens (força {row['target']})"}
-    # still to be collected before its day (a passer of an earlier day takes it): it must stay beatable until then
-    earlier = [r for r in rows if r["day"] < row["day"] and any(o.pk == game_account.pk for o in r["sources"])]
-    if earlier:
-        out["why"] = f"espera ser recolhida por {earlier[-1]['passer'].name}"
-        return out
-    crew, points = mine.get("crew"), int(mine.get("points") or 0)
-    if crew is None or crew >= row["target"] or points <= 0:
-        return out                                          # there: stop
-    if row["day"] == 0 and now >= collect_from(month, game_account, members, now):
-        return out                                          # collecting: what it holds is its champion's
-    base = crew - crew_bonus(points)
-    total = row["convert"] if row["convert"] else (row["target"] - crew) * 10   # unreachable today: what is missing
-    if base_cap is not None:                                # as an origin, its own raiders must still beat it
-        total = min(total, max(0, (base_cap - base) * 10))
-    out["total"] = max(0, int(total)) // 10 * 10
-    return out
-
-
-def crew_plan(month, now: datetime | None = None) -> list[dict]:
-    """N-263: the crew plan of the coming passer days (the rest of this block and the next one) — for each, the
-    passer, the strength it needs that day, what it has and what it still converts (a part at each mission, to be
-    there when the day begins: a conversion only counts when it is over)."""
-    now = now or timezone.now()
-    by_pk = {str(m.game_account_id): m.game_account for m in month.members.select_related("game_account__account")}
-    rows, members_of = [], {}
-    for slot in flow.upcoming(month, now):
-        champion, passer = by_pk.get(slot["champion"]), by_pk.get(slot["passer"])
-        if champion is None or passer is None:
-            continue
-        if slot["offset"] not in members_of:
-            members_of[slot["offset"]] = flow.members_today(month, slot["start"] + timedelta(hours=1))
-        members = members_of[slot["offset"]]
-        need = passer_need(month, champion, passer, members)
-        # the strength must be there when it starts collecting today, or when its day begins
-        by = collect_from(month, passer, members, now) if slot["offset"] == 0 else slot["start"]
-        rows.append({"day": slot["offset"], "date": slot["start"], "by": by, "champion": champion, "passer": passer, **need})
-    return rows
 
 
 def turn_end(month, now: datetime | None = None):
@@ -882,15 +771,14 @@ def raid_seconds(raider) -> int:
     return flow.raid_seconds(raider)
 
 
-def drop_stale(month, members) -> int:
-    """N-263: raids decided before the day turned that today's roles no longer allow (a passer that became an origin
-    keeps no raid on its old origins) are dropped — one left open held its target from everyone for hours
-    (Carcereiro -> NexX, 26/11)."""
-    level = {m.game_account_id: PiracyMember.LEVEL[m.role] for m in members}
+def drop_stale(month, t) -> int:
+    """N-263: raids decided that the day's tree no longer has (the roles changed, a pair got locked) are dropped — one
+    left open held its target from everyone for hours (Carcereiro -> NexX, 26/11)."""
+    edges = {(n.parent.pk, n.pk) for n in t.nodes.values() if n.parent is not None}
     stale = [r.pk for r in month.routes.filter(status=PiracyRoute.PLANNED, target__isnull=False)
-             if level.get(r.raider_id, -1) <= level.get(r.target_id, 99)]
+             if (r.raider_id, r.target_id) not in edges]
     if stale:
-        PiracyRoute._base_manager.filter(pk__in=stale).update(status=PiracyRoute.SKIPPED, message="os papéis trocaram")
+        PiracyRoute._base_manager.filter(pk__in=stale).update(status=PiracyRoute.SKIPPED, message="a corrente mudou")
     return len(stale)
 
 
@@ -900,108 +788,27 @@ def _taken(month) -> set:
                .values_list("target_id", flat=True))
 
 
-def champion_may_take(month, champion, ga, now: datetime | None = None, theirs: dict | None = None) -> bool:
-    """N-263: a champion takes an origin directly — another lobby, the pair free, a sure win, and not its passer later
-    in the block (the pair would be locked on that day) unless that one already holds direct_points: then the points
-    are not left exposed for days — the champion takes them and the agenda gives that day to another account."""
-    now = now or timezone.now()
-    if ga.account_id == champion.account_id or pair_release(month, champion, ga, now):
-        return False
-    theirs = theirs or strength(ga)
-    if str(ga.pk) in flow.still_to_pass(month, champion, now) and (theirs["points"] or 0) < max(month.direct_points or 0, month.min_points):
-        return False
-    return sure_win(strength(champion)["crew"], theirs["crew"], month.min_win_percent)
-
-
-def direct_from(month, origin, members, now: datetime | None = None) -> int:
-    """N-263: from how many points a champion takes this origin directly: month.direct_points while a passer of the
-    day can collect it, month.min_points when none can."""
-    now = now or timezone.now()
-    theirs = strength(origin)
-    for m in members:
-        p = m.game_account
-        if m.role != PiracyMember.PASSER or p.account_id == origin.account_id or pair_release(month, p, origin, now):
-            continue
-        if _convert_to_win(month, strength(p), theirs, None) is not None:
-            return max(month.direct_points or 0, month.min_points)
-    return month.min_points
-
-
-def collectable(month, passer, members, now: datetime | None = None, base_cap=None, mine: dict | None = None) -> list:
-    """N-263: the origins the passer takes this day — another lobby, the pair free, nobody else on them, the points
-    to take, a win with the strength it has — leaving to the champions the ones over direct_points they take
-    directly. [(account, its strength, 0)], the most points first."""
-    now = now or timezone.now()
-    taken = _taken(month)
-    mine = mine or strength(passer)
-    champions = [m.game_account for m in members if m.role == PiracyMember.CHAMPION]
-    out = []
-    for m in members:
-        ga = m.game_account
-        if m.role != PiracyMember.ORIGIN or ga.account_id == passer.account_id or ga.pk in taken:
-            continue
-        theirs = strength(ga)
-        points = theirs["points"] or 0
-        if points < month.min_points or pair_release(month, passer, ga, now):
-            continue
-        if points >= (month.direct_points or 0) and any(champion_may_take(month, c, ga, now, theirs) for c in champions):
-            continue
-        # N-263: only the ones it already beats — its conversion is the crew plan's, in the morning of its day (a
-        # conversion made at the raid takes hours and would hold the points past the delivery)
-        if _convert_to_win(month, mine, theirs, base_cap) == 0:
-            out.append((ga, theirs, 0))
-    return sorted(out, key=lambda item: (-((item[1]["points"] or 0) - item[2]), item[2]))
-
-
-def still_collecting(month, passer, members, now: datetime | None = None) -> bool:
-    """N-263: the passer's own raid is on its way, or it still has an origin to take."""
-    active = PiracyRoute._base_manager.filter(month=month, raider=passer,
-                                              status__in=(PiracyRoute.PLANNED, PiracyRoute.SENT))
-    return active.exists() or bool(collectable(month, passer, members, now))
-
-
-def collect_count(month, passer, members, now: datetime | None = None) -> int:
-    return len(collectable(month, passer, members, now))
-
-
-def collect_from(month, passer, members, now: datetime | None = None):
-    """N-263: from when the passer collects: as late as lets its raids, one after the other, come back before its
-    champion's raid lands at deliver_at — so the points it carries are open to others for the shortest time."""
-    count = max(1, collect_count(month, passer, members, now))
-    return deliver_at(month, now) - timedelta(seconds=raid_seconds(passer) * count)
-
-
-def empties_at(month, passer, members, now: datetime | None = None, champion=None):
-    """N-263: from when the champion sends its raid on its passer of the day: at once when the collecting window began
-    and the passer has nothing left to take; else so that the raid lands at deliver_at."""
-    now = now or timezone.now()
-    if now >= collect_from(month, passer, members, now) and not still_collecting(month, passer, members, now):
-        return now
-    lands = deliver_at(month, now) - timedelta(seconds=raid_seconds(champion) // 2)
-    return max(now, lands)
-
-
 def next_for(game_account, now: datetime | None = None, fresh: dict | None = None) -> dict:
-    """What the Pirate Fortress job of this account does for the plan now (N-263, see flow):
+    """What the Pirate Fortress job of this account does for the plan now (N-263, see tree):
     {"route": {...} | None, "hold": bool, "convert_all": bool, "share_percent": int, "share_every_hours": int,
-    "route_at": when to come back for a raid planned later}.
-    A champion takes, as soon as possible, the origins over direct_points it may take directly, and its passer of the
-    day at the delivery; a passer takes, in its window before the delivery, the origins it collects; an origin keeps
-    its points. Champions convert all their points; the others hold, converting a share now and then."""
+    "route_at": when to come back for a raid planned later, "convert_total"/"convert_by": the crew plan}.
+    An account takes the ones hanging on it in the day's tree when their time comes (a champion the ones straight
+    under it at once and its carriers at the delivery; a carrier its own ones just before it is taken). Champions
+    convert all their points; the others hold, converting a part at each mission."""
     now = now or timezone.now()
     expire(now)
     fresh = {k: int(v) for k, v in (fresh or {}).items() if v is not None}
     plan = plan_for(game_account, now, fresh)
     if plan is None:
         return {"route": None, "hold": False}
-    member, month, now_members, role, hold = plan["member"], plan["month"], plan["members"], plan["role"], plan["hold"]
-    flow.join_new(month)                                # N-263: an account that got its fortress and job joins
+    member, month, role, hold = plan["member"], plan["month"], plan["role"], plan["hold"]
     extra = {k: plan.get(k) for k in ("convert_all", "share_percent", "share_every_hours", "crew_cap", "crew_floor",
                                       "base_cap", "bonus_max", "bonus_full", "share_jitter", "preconvert_points",
                                       "preconvert_target", "convert_total", "convert_by", "convert_target")}
     if plan.get("waiting"):
         return {"route": None, "hold": True, **extra, "starts_at": int(month.starts_at.timestamp())}
-    drop_stale(month, now_members)
+    t = plan["tree"]
+    drop_stale(month, t)
     open_route = (PiracyRoute._base_manager.filter(raider=game_account, month=month, status=PiracyRoute.PLANNED, due_until__gt=now)
                   .select_related("raider__account", "target__account", "outside").order_by("due_from").first())
     if open_route is not None:
@@ -1009,18 +816,7 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
             return {"route": None, "hold": hold, **extra, "route_at": int(open_route.due_from.timestamp())}
         info = _target_info(open_route.target) if open_route.target_id else _outside_info(open_route.outside)
         if info:
-            payload = _payload(open_route, info)
-            if open_route.target_id and role == PiracyMember.PASSER:
-                # N-254: again with the numbers of now — what is still missing (0 once the conversion came in)
-                convert = _convert_to_win(month, {**strength(game_account), **fresh}, strength(open_route.target), plan.get("base_cap"))
-                if convert is None:
-                    PiracyRoute._base_manager.filter(pk=open_route.pk).update(status=PiracyRoute.SKIPPED,
-                                                                              message="a passagem não vence mais esse alvo")
-                    open_route = None
-                else:
-                    payload["convert_points"] = convert
-            if open_route is not None:
-                return {"route": payload, "hold": hold, **extra}
+            return {"route": {**_payload(open_route, info), "convert_points": 0}, "hold": hold, **extra}
     if role == PiracyMember.ORIGIN:
         return {"route": None, "hold": hold, **extra}
     # N-218: never at or right before the ranking turn: every account's capture points go back to 0 then
@@ -1028,59 +824,24 @@ def next_for(game_account, now: datetime | None = None, fresh: dict | None = Non
         return {"route": None, "hold": hold, **extra}
     mine = {**strength(game_account), **fresh}
     week = max(1, int((now - month.starts_at).total_seconds() // (7 * 86400)) + 1)
-    level = PiracyMember.LEVEL[role]
-    candidates, later = [], []                          # (points, convert, crew, account); when to come back
-    if role == PiracyMember.PASSER:
-        window = collect_from(month, game_account, now_members, now)
-        if now < window:
-            later.append(window)                        # N-263: collects only in the window before its delivery
-        else:
-            for ga, theirs, convert in collectable(month, game_account, now_members, now, plan.get("base_cap"), mine):
-                candidates.append((theirs["points"] or 0, convert, theirs["crew"], ga))
-    else:
-        my_passer = flow.today(month, now).get(str(game_account.pk))
-        taken = _taken(month)
-        for m in now_members:
-            ga = m.game_account
-            if m.role == PiracyMember.CHAMPION or ga.pk in taken:
-                continue
-            theirs = strength(ga)
-            points = theirs["points"] or 0
-            if m.role == PiracyMember.PASSER:
-                # only its own passer of the day, at the delivery
-                if str(ga.pk) != my_passer or ga.account_id == game_account.account_id or pair_release(month, game_account, ga, now):
-                    continue
-                when = empties_at(month, ga, now_members, now, game_account)
-                if when > now:
-                    later.append(when)
-                    continue
-                if points < month.min_points or not sure_win(mine["crew"], theirs["crew"], month.min_win_percent):
-                    continue
-            else:
-                if points < direct_from(month, ga, now_members, now) or not champion_may_take(month, game_account, ga, now, theirs):
-                    continue
-                if _leave_to_other_champion(month, game_account, ga, theirs, now_members, member.group):
-                    continue
-            candidates.append((points, 0, theirs["crew"], ga))
-    # N-255: the most points for the least conversion first (net gain)
-    for points, convert, crew, ga in sorted(candidates, key=lambda c: (-(c[0] - c[1]), c[1])):
-        if not _target_info(ga):
+    taken = _taken(month)
+    ready, next_at = daytree.due(t, game_account, now)
+    for child in ready:
+        if child.points < month.min_points or child.pk in taken or not _target_info(child.ga):
             continue
-        # a conversion first takes its time: the raid waits for it
-        until = now + timedelta(hours=ROUTE_HOURS * (2 if convert else 1))
+        until = now + timedelta(hours=ROUTE_HOURS)
         if month.turn_at and now < month.turn_at:
             until = min(until, month.turn_at)
-        route = PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=level, raider=game_account,
-                                           target=ga, target_points=points, raider_crew=mine["crew"], target_crew=crew,
+        route = PiracyRoute.objects.create(month=month, group=member.group, week=week, stage=child.depth,
+                                           raider=game_account, target=child.ga, target_points=child.points,
+                                           raider_crew=mine.get("crew"), target_crew=child.at_raid,
                                            due_from=now, due_until=until)
         route = PiracyRoute._base_manager.select_related("raider", "target").get(pk=route.pk)
-        if role == PiracyMember.CHAMPION and str(ga.pk) in flow.still_to_pass(month, game_account, now):
-            flow.replan_rest(month, now)                 # N-263: its day goes to another account
-        return {"route": {**_payload(route, _target_info(ga)), "convert_points": convert}, "hold": hold, **extra}
+        return {"route": {**_payload(route, _target_info(child.ga)), "convert_points": 0}, "hold": hold, **extra}
     outside = _outside_route(month, member, game_account, mine, now, week, role)
-    if outside is None and later:
-        # N-263: the ship comes back for its raid at the planned time (a mission that ends after it waits)
-        return {"route": None, "hold": hold, **extra, "route_at": int(min(later).timestamp())}
+    if outside is None and next_at is not None:
+        # the ship comes back for its raid at the planned time (a mission that ends after it waits)
+        return {"route": None, "hold": hold, **extra, "route_at": int(next_at.timestamp())}
     return {"route": outside, "hold": hold, **extra}
 
 
@@ -1099,23 +860,6 @@ def champion_takes(month) -> dict:
             .values_list("raider_id", "target_points"):
         out[raider_id] += int(points or 0)
     return out
-
-
-def _leave_to_other_champion(month, game_account, target, theirs, now_members, group) -> bool:
-    """N-217: with both champions able to take this account, the one far ahead (more than BALANCE_SHARE of its take,
-    at least min_points) leaves it to the other — within the margin it is free, they need not be alike."""
-    others = [m.game_account for m in now_members if m.group == group and m.role == PiracyMember.CHAMPION
-              and m.game_account_id != game_account.pk and m.game_account.account_id != target.account_id]
-    if not others:
-        return False
-    takes = champion_takes(month)
-    mine = takes.get(game_account.pk, 0)
-    for other in others:
-        if not sure_win(strength(other)["crew"], theirs["crew"], month.min_win_percent):
-            continue
-        if mine - takes.get(other.pk, 0) > max(month.min_points, BALANCE_SHARE * mine):
-            return True
-    return False
 
 
 def _outside_route(month, member, game_account, mine, now, week, role=None) -> dict | None:
@@ -1197,120 +941,16 @@ def _emptied(month) -> dict:
     return out
 
 
-def day_agenda(month, members, now: datetime | None = None) -> list[dict]:
-    """N-263: today's delivery of each champion — its passer of the day, from when the passer collects and when the
-    champion's raid lands on it."""
-    now = now or timezone.now()
-    by_pk = {m.game_account.pk: m.game_account for m in members}
-    passers = flow.today(month, now)
-    out = []
-    for m in members:
-        if m.role != PiracyMember.CHAMPION:
-            continue
-        champion = m.game_account
-        passer = next((ga for pk, ga in by_pk.items() if str(pk) == passers.get(str(champion.pk))), None)
-        row = {"champion": champion, "passer": passer, "deliver": _hm(deliver_at(month, now), now)}
-        if passer is not None:
-            window = collect_from(month, passer, members, now)
-            row.update(collect=_hm(window, now), collecting=now >= window, sources=collect_count(month, passer, members, now))
-        out.append(row)
-    return out
-
-
-def matrix(month, members, rows_by_ga: dict, active: list, now: datetime | None = None) -> dict:
-    """N-263: who takes whom today, cell by cell, by the same rules next_for follows — now, the pair locked until when,
-    a raid on its way (landing when), at the planned time (the passer's window, the delivery), or not today and why."""
-    now = now or timezone.now()
-    role = {m.game_account_id: m.role for m in members}
-    champions = [m.game_account for m in members if m.role == PiracyMember.CHAMPION]
-    passer_of = flow.today(month, now)
-
-    def pts(ga):
-        return int((rows_by_ga.get(ga.pk) or {}).get("capture_points") or 0)
-
-    def read(ga):
-        row = rows_by_ga.get(ga.pk) or {}
-        return {"crew": row.get("crew"), "points": row.get("capture_points")}
-
-    def short(points):
-        return f"<{points // 1000} mil" if points >= 1000 else f"<{points}"
-
-    raiders = champions + sorted([m.game_account for m in members if m.role == PiracyMember.PASSER], key=lambda g: -pts(g))
-    targets = sorted([m.game_account for m in members if m.role != PiracyMember.CHAMPION],
-                     key=lambda g: (role[g.pk] != PiracyMember.PASSER, -pts(g)))
-    on = {(r.raider_id, r.target_id): r for r in active if r.target_id}
-    busy = {r.target_id: r for r in active if r.target_id}
-    windows, rows = {}, []
-    for raider in raiders:
-        is_champion = role[raider.pk] == PiracyMember.CHAMPION
-        later = flow.still_to_pass(month, raider, now) if is_champion else set()
-        cells = []
-        for target in targets:
-            route = on.get((raider.pk, target.pk))
-            release = None
-            if raider.pk == target.pk or (not is_champion and role[target.pk] == PiracyMember.PASSER):
-                cell = {"kind": "no", "text": "—", "title": ""}
-            elif is_champion and role[target.pk] == PiracyMember.PASSER and passer_of.get(str(raider.pk)) != str(target.pk):
-                cell = {"kind": "no", "text": "—", "title": "passagem da outra campeã"}
-            elif raider.account_id == target.account_id:
-                cell = {"kind": "no", "text": "lobby", "title": "o jogo não deixa o mesmo lobby"}
-            elif route is not None:
-                text = (f"chega {_hm(route.arrives_at, now)}" if route.arrives_at else "a caminho") \
-                    if route.status == PiracyRoute.SENT else "sai agora"
-                cell = {"kind": "go", "text": text, "title": "assalto do plano"}
-            elif (release := pair_release(month, raider, target, now)) is not None:
-                cell = {"kind": "lock", "text": _hm(release, now), "title": "dupla livre em"}
-            elif target.pk in busy:
-                cell = {"kind": "lock", "text": "ocupado", "title": f"{busy[target.pk].raider.name} já vai"}
-            elif is_champion and role[target.pk] == PiracyMember.PASSER:
-                when = empties_at(month, target, members, now, raider)
-                if when > now:
-                    cell = {"kind": "wait", "text": _hm(when, now), "title": "entrega: depois de a passagem recolher"}
-                elif pts(target) < month.min_points:
-                    cell = {"kind": "no", "text": short(month.min_points), "title": "abaixo do mínimo de roubo"}
-                else:
-                    cell = {"kind": "ok", "text": "agora", "title": "entrega"}
-            elif is_champion:
-                threshold = direct_from(month, target, members, now)
-                if str(target.pk) in later:
-                    cell = {"kind": "no", "text": "passa depois", "title": "é passagem dela mais tarde neste bloco"}
-                elif pts(target) < threshold:
-                    cell = {"kind": "no", "text": short(threshold), "title": "abaixo do roubo direto: espera a passagem"}
-                elif not sure_win(read(raider)["crew"], read(target)["crew"], month.min_win_percent):
-                    cell = {"kind": "no", "text": "não vence", "title": ""}
-                else:
-                    cell = {"kind": "ok", "text": "agora", "title": "roubo direto"}
-            else:
-                if pts(target) < month.min_points:
-                    cell = {"kind": "no", "text": short(month.min_points), "title": "abaixo do mínimo de roubo"}
-                elif pts(target) >= (month.direct_points or 0) and any(
-                        champion_may_take(month, c, target, now, read(target)) for c in champions):
-                    cell = {"kind": "no", "text": "vai direto", "title": "a campeã leva direto"}
-                else:
-                    convert = _convert_to_win(month, read(raider), read(target), None)
-                    if raider.pk not in windows:
-                        windows[raider.pk] = collect_from(month, raider, members, now)
-                    if convert is None:
-                        cell = {"kind": "no", "text": "não vence", "title": ""}
-                    elif now < windows[raider.pk]:
-                        cell = {"kind": "wait", "text": _hm(windows[raider.pk], now), "title": "recolhe a partir de"}
-                    else:
-                        cell = {"kind": "ok", "text": f"converte {convert:,}".replace(",", ".") if convert else "agora",
-                                "title": "recolha"}
-            cells.append(cell)
-        rows.append({"ga": raider, "role": "campeã" if is_champion else "passagem", "cells": cells})
-    return {"targets": [{"ga": t, "points": pts(t), "role": "passagem" if role[t.pk] == PiracyMember.PASSER else "origem"}
-                        for t in targets], "rows": rows}
-
-
 def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
-    """Everything the piracy page shows of the running plan: exposed points, the two champions side by side, the chain
-    (origins -> passers -> champions) with what each account does next and when, the day's agenda, who may take whom,
-    and the feed of raids."""
+    """Everything the piracy page shows of the running plan: exposed points, the two champions side by side, the
+    day's tree (who takes whom, through how many hops, at what time, and what each account converts), the chain
+    columns by role, and the feed of raids."""
     now = now or timezone.now()
-    flow.join_new(month)
-    members = members_now(month, now)
-    drop_stale(month, members)
+    read_now = {pk: {"crew": row.get("crew"), "points": row.get("capture_points")} for pk, row in rows_by_ga.items()
+                if row.get("crew") is not None}
+    t = daytree.build(month, now, read=read_now)
+    drop_stale(month, t)
+    members = members_of(t)
     lobbies = sorted({m.game_account.account_id for m in members},
                      key=lambda a: -sum(1 for m in members if m.game_account.account_id == a))
     color = {lobby: LOBBY_COLORS[i % len(LOBBY_COLORS)] for i, lobby in enumerate(lobbies)}
@@ -1321,22 +961,15 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
     takes = champion_takes(month)
     emptied = _emptied(month)
     scale = max(1, month.min_points * 2)
-    day = day_agenda(month, members, now)
-    crew = crew_plan(month, now)
-    deliver_to = {row["passer"].pk: row for row in day if row.get("passer") is not None}
-
-    def read(ga):
-        row = rows_by_ga.get(ga.pk) or {}
-        return {"crew": row.get("crew"), "points": row.get("capture_points")}
 
     def lands(route) -> str:
         return f" · chega {_hm(route.arrives_at, now)}" if route.arrives_at else ""
 
     def node(m):
-        ga, r = m.game_account, read(m.game_account)
+        ga, n = m.game_account, t.node(m.game_account)
         row = rows_by_ga.get(ga.pk) or {}
-        points = int(r["points"] or 0)
-        out = {"ga": ga, "role": m.role, "points": points, "crew": r["crew"], "color": color[ga.account_id],
+        points = int(row.get("capture_points") or 0)
+        out = {"ga": ga, "role": m.role, "points": points, "crew": row.get("crew"), "color": color[ga.account_id],
                "lobby": ga.account.label if ga.account_id else "", "fill": min(100, round(points * 100 / scale)),
                "tone": "mut", "text": "", "read": _hm(row.get("read_at"), now),
                "stale": bool(row.get("read_at") and now - row["read_at"] > timedelta(hours=2)),
@@ -1344,46 +977,24 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
         if m.role != PiracyMember.CHAMPION and points:
             out["since"] = _ago(emptied.get(ga.pk) or month.starts_at, now)
         route_in, route_out = by_target.get(ga.pk), by_raider.get(ga.pk)
-        if m.role == PiracyMember.CHAMPION:
-            if route_out and route_out.status == PiracyRoute.SENT:
-                out.update(tone="warn", text=f"assalto em {route_out.target_name} ({route_out.target_points or 0:,})".replace(",", ".") + lands(route_out))
-            elif route_out:
-                out.update(tone="ok", text=f"rouba {route_out.target_name} agora")
-            else:
-                mine = next((d for d in day if d["champion"].pk == ga.pk), None)
-                if mine and mine.get("passer") is not None:
-                    out.update(tone="ok", text=f"esvazia {mine['passer'].name} às {mine['deliver']}")
-                else:
-                    out.update(tone="ok", text="livre")
-        elif m.role == PiracyMember.PASSER:
-            until = _converting_until(ga)
-            plan = deliver_to.get(ga.pk)
-            if until > now.timestamp():
-                ready = datetime.fromtimestamp(until, tz=datetime_timezone.utc)
-                out.update(tone="warn", text=f"convertendo · pronta {_hm(ready, now)}")
-            elif route_out:
-                out.update(tone="warn" if route_out.status == PiracyRoute.SENT else "ok",
-                           text=("a caminho de " if route_out.status == PiracyRoute.SENT else "rouba ") + route_out.target_name + lands(route_out))
-            else:
-                need = next((row for row in crew if row["day"] == 0 and row["passer"].pk == ga.pk), None)
-                when = (f"recolhe às {plan['collect']} · " if plan and not plan.get("collecting") else "")
-                if need is None or not need["target"]:
-                    out.update(tone="mut", text=when + "sem origem do lobby da campeã hoje")
-                elif need["convert"] is None:
-                    out.update(tone="bad", text=when + f"não chega à força {need['target']:,}".replace(",", "."))
-                elif need["convert"]:
-                    out.update(tone="warn", text=when + f"converte {need['convert']:,} para força {need['target']:,}".replace(",", "."))
-                else:
-                    out.update(tone="ok", text=when + f"força {need['now']:,} ≥ {need['target']:,}".replace(",", "."))
+        until = _converting_until(ga)
+        if route_out is not None:
+            out.update(tone="warn" if route_out.status == PiracyRoute.SENT else "ok",
+                       text=("assalto em " if route_out.status == PiracyRoute.SENT else "rouba ") + route_out.target_name + lands(route_out))
+        elif route_in is not None:
+            out.update(tone="warn", text=f"{route_in.raider.name} a caminho" + lands(route_in))
+        elif until > now.timestamp():
+            out.update(tone="warn", text=f"convertendo · pronta {_hm(datetime.fromtimestamp(until, tz=datetime_timezone.utc), now)}")
+        elif n is not None and n.children and not n.champion:
+            out.update(tone="ok", text=f"recolhe {len(n.children)} às {_hm(n.collect_from, now)} · vai para {n.parent.ga.name} às {_hm(n.taken_at, now)}")
+        elif n is not None and n.champion:
+            out.update(tone="ok", text=f"recebe {len(n.children)} conta{'s' if len(n.children) != 1 else ''} hoje")
+        elif n is not None and n.parent is not None:
+            out.update(tone="ok" if points >= month.min_points else "mut",
+                       text=f"vai para {n.parent.ga.name} às {_hm(n.taken_at, now)}" if points >= month.min_points
+                       else f"acumulando · vai para {n.parent.ga.name}")
         else:
-            if route_in and route_in.status == PiracyRoute.SENT:
-                out.update(tone="warn", text=f"{route_in.raider.name} a caminho" + lands(route_in))
-            elif route_in:
-                out.update(tone="ok", text=f"vai para {route_in.raider.name}")
-            elif points >= month.min_points:
-                out.update(tone="warn", text=row.get("why") or "aguardando")
-            else:
-                out.update(tone="mut", text="acumulando")
+            out.update(tone="bad" if points >= month.min_points else "mut", text="sem caminho hoje")
         return out
 
     nodes = [node(m) for m in members]
@@ -1400,8 +1011,8 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
         both = a["took"] + b["took"]
         ahead = a["took"] - b["took"] > max(month.min_points, BALANCE_SHARE * a["took"])
         duel = {"left": a, "right": b, "left_pct": round(a["took"] * 100 / both) if both else 50,
-                "text": (f"{a['ga'].name} à frente · alvos em comum vão para {b['ga'].name}" if ahead
-                         else "dentro da margem · pega quem estiver pronta")}
+                "text": (f"{a['ga'].name} à frente · a corrente manda mais para {b['ga'].name}" if ahead
+                         else "dentro da margem")}
     feed = []
     for r in routes:
         if r.status == PiracyRoute.SKIPPED:
@@ -1424,5 +1035,31 @@ def board(month, rows_by_ga: dict, now: datetime | None = None) -> dict:
             "bonus_mark": min(100, round(CREW_BONUS_FULL * 100 / scale)), "points_mark": min(100, round(month.min_points * 100 / scale)),
             "day": max(1, (now - month.starts_at).days + 1) if now > month.starts_at else 0,
             "days": max(1, (month.ends_at - month.starts_at).days),
-            "agenda": day, "matrix": matrix(month, members, rows_by_ga, active, now), "crew_plan": crew,
-            "delivered": delivered, "oldest": oldest, "deliver_at": _hm(deliver_at(month, now), now)}
+            "tree": tree_rows(month, t, color, now), "delivered": delivered, "oldest": oldest,
+            "deliver_at": _hm(t.deliver, now)}
+
+
+def tree_rows(month, t, color, now) -> list[dict]:
+    """N-263: the day's tree as rows, from each champion down (depth gives the indent): who takes it, when the raid
+    goes out and lands, what it converts; then the accounts no chain reaches."""
+    rows = []
+
+    def walk(n, depth):
+        builder = t.builders.get(n.pk)
+        rows.append({"ga": n.ga, "depth": depth, "champion": n.champion, "points": n.points, "power": n.power,
+                     "color": color.get(n.ga.account_id, "#999"), "why": n.why, "carries": len(n.children),
+                     "send": _hm(n.send_at, now) if n.send_at else "", "lands": _hm(n.taken_at, now) if n.taken_at else "",
+                     "collect": _hm(n.collect_from, now) if n.collect_from else "",
+                     "below": n.points < month.min_points and not n.champion,
+                     "builder": builder})
+        for child in sorted(n.children, key=lambda c: (-len(c.children), -c.points)):
+            walk(child, depth + 1)
+
+    for champion in t.champions:
+        walk(champion, 0)
+    for n in t.unreached:
+        rows.append({"ga": n.ga, "depth": 0, "champion": False, "points": n.points, "power": n.power,
+                     "color": color.get(n.ga.account_id, "#999"), "why": n.why or "sem caminho hoje", "carries": 0,
+                     "send": "", "lands": "", "collect": "", "below": n.points < month.min_points, "builder": None,
+                     "unreached": True})
+    return rows

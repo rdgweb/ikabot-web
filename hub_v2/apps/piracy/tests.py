@@ -18,6 +18,7 @@ from apps.orgs.models import Membership, Organization
 from apps.orgs.scope import activate, deactivate
 
 from . import flow, services
+from . import tree as daytree
 from .models import PiracyMonth, PiracyRoute, PiracyTarget
 
 
@@ -74,12 +75,6 @@ class Base(TestCase):
     def passers(self, month, now=None):
         return [m.game_account for m in services.members_now(month, now) if m.role == "passer"]
 
-    def no_passers(self, month, now=None):
-        """N-263: the running block with no passer on any day (the champions then take from min_points)."""
-        number, _day = flow._block(month, now)
-        PiracyMonth.objects.filter(pk=month.pk).update(turns={f"block:{number}": [{} for _ in range(month.pair_days)]})
-        month.refresh_from_db()
-
     def agent(self, path, method="get", **data):
         headers = {"HTTP_X_AGENT_TOKEN": self.token, "HTTP_X_AGENT_NODE_ID": str(self.node.pk)}
         if method == "get":
@@ -95,11 +90,9 @@ class PlanTests(Base):
         self.assertNotEqual(champions[0].account_id, champions[1].account_id)
         self.assertEqual(month.members.count(), len(self.accounts))
         self.assertEqual(month.members.filter(role="origin").count(), len(self.accounts) - 2)   # N-263: the day picks the passers
-        lobby = {ga.pk: ga.account_id for ga in self.accounts}
-        for champion, passer in flow.today(month).items():
-            self.assertNotEqual(lobby[int(champion)] if champion.isdigit() else
-                                next(v for k, v in lobby.items() if str(k) == champion),
-                                next(v for k, v in lobby.items() if str(k) == passer))
+        for node in daytree.build(month).nodes.values():                 # N-263: every hop between two lobbies
+            if node.parent is not None:
+                self.assertNotEqual(node.ga.account_id, node.parent.ga.account_id)
 
     def test_next_month_draws_accounts_that_were_not_champions(self):
         first = {c.game_account_id for c in self.plan().champions.all()}
@@ -120,7 +113,6 @@ class PlanTests(Base):
 
     def test_the_champion_takes_only_sure_wins_never_its_lobby_and_once_a_week(self):
         month = self.plan(direct_points=0)
-        self.no_passers(month)
         champion_m = month.members.filter(role="champion").first()
         champion = champion_m.game_account
         group = [m.game_account for m in month.members.filter(group=champion_m.group).exclude(pk=champion_m.pk)]
@@ -151,7 +143,7 @@ class PlanTests(Base):
         target = PiracyTarget.objects.create(organization=self.org, server_id="s1-br", player_name="Inimigo", city_id="999",
                                              island_id="88")
         champion = month.members.filter(role="champion").first().game_account
-        passer = self.passers(month)[0]
+        passer = month.members.filter(role="origin").first().game_account
         for ga in self.accounts:
             self.set_strength(ga, points=0, crew=1000)                       # nothing to gather: the target comes next
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
@@ -246,7 +238,6 @@ class WinChanceTests(TestCase):
 class ThresholdPauseTests(Base):
     def test_below_the_points_nothing_and_paused_everyone_plays_normally(self):
         month = self.plan(min_points=20000, direct_points=0)
-        self.no_passers(month)
         champion = month.members.filter(role="champion").first().game_account
         origin = month.members.filter(role="origin").first().game_account
         self.set_strength(champion, points=0, crew=30000)
@@ -329,7 +320,6 @@ class BudgetTests(Base):
 
     def test_the_page_shows_the_next_raids(self):
         month = self.plan(direct_points=0)
-        self.no_passers(month)
         champion = month.members.filter(role="champion").first().game_account
         self.set_strength(champion, points=0, crew=30000)
         self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
@@ -352,123 +342,6 @@ class CapWinsTests(Base):
             self.assertTrue(b["floor"] is None or b["floor"] <= b["cap"])    # origins of 30k would need ~34.5k: left out
 
 
-class AgendaTests(Base):
-    """N-263: a 3-day agenda — each day every champion has a passer of another lobby it may empty, never the same one
-    twice in the block; the roles follow the day."""
-
-    def lobbies(self):
-        big = [ga for ga in self.accounts if ga.account.label == "grande"]
-        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
-        small = [ga for ga in self.accounts if ga.account.label == "pequeno"]
-        return big, middle, small
-
-    def test_each_day_each_champion_has_a_passer_it_may_empty(self):
-        big, middle, small = self.lobbies()
-        month = self.plan(champions=[big[0], middle[0]])
-        days = flow.agenda(month)
-        self.assertEqual(len(days), month.pair_days)
-        lobby = {str(ga.pk): ga.account_id for ga in self.accounts}
-        for champion in (big[0], middle[0]):
-            used = [day[str(champion.pk)] for day in days]
-            self.assertEqual(len(used), len(set(used)))                     # the same passer once per block
-            for passer in used:
-                self.assertNotEqual(lobby[passer], champion.account_id)
-        for day in days:
-            self.assertEqual(len(set(day.values())), len(day))            # one passer serves one champion a day
-        # the big lobby's champion has exactly 3 accounts of other lobbies to empty: they take the 3 days
-        self.assertEqual({day[str(big[0].pk)] for day in days}, {str(ga.pk) for ga in middle[1:] + small})
-        month.refresh_from_db()
-        self.assertIn(f"block:{flow._block(month)[0]}", month.turns)       # drawn once and kept
-
-    def test_the_roles_follow_the_day(self):
-        big, middle, _small = self.lobbies()
-        month = self.plan(champions=[big[0], middle[0]])
-        start = flow.day_start(month)
-        first = set(map(lambda g: g.pk, self.passers(month, start + timedelta(minutes=5))))
-        second = set(map(lambda g: g.pk, self.passers(month, start + timedelta(days=1, minutes=5))))
-        self.assertEqual(len(first), 2)
-        self.assertNotEqual(first, second)
-
-    def test_a_champion_never_raids_directly_its_passer_of_later(self):
-        big, middle, small = self.lobbies()
-        month = self.plan(champions=[big[0], middle[0]], direct_points=20000)
-        later = flow.still_to_pass(month, big[0])
-        self.assertTrue(later)
-        for ga in self.accounts:
-            self.set_strength(ga, points=0, crew=1000)
-        self.set_strength(big[0], points=0, crew=30000)
-        for pk in later:
-            self.set_strength(next(ga for ga in self.accounts if str(ga.pk) == pk), points=15000, crew=1000)
-        self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
-        self.assertFalse(PiracyRoute.objects.filter(raider=big[0], target__pk__in=[ga.pk for ga in self.accounts if str(ga.pk) in later]).exists())
-        # one that already holds direct_points is taken now, and its day goes to another account
-        full = next(ga for ga in self.accounts if str(ga.pk) in later)
-        self.set_strength(full, points=30000, crew=1000)
-        self.agent(f"/api/agent/piracy/next/?game_account_id={big[0].pk}")
-        self.assertTrue(PiracyRoute.objects.filter(raider=big[0], target=full).exists())
-        month.refresh_from_db()
-        self.assertNotIn(str(full.pk), flow.still_to_pass(month, big[0]))
-
-    def test_direct_only_from_direct_points_and_the_passer_waits_its_window(self):
-        big, middle, _small = self.lobbies()
-        month = self.plan(champions=[big[0], middle[0]], direct_points=20000)
-        for ga in self.accounts:
-            self.set_strength(ga, points=15000, crew=1000)
-        self.set_strength(middle[0], points=0, crew=30000)
-        later = flow.still_to_pass(month, middle[0])
-        origin = next(ga for ga in big[1:] if str(ga.pk) not in later and ga not in self.passers(month))
-        self.agent(f"/api/agent/piracy/next/?game_account_id={middle[0].pk}")
-        self.assertFalse(PiracyRoute.objects.filter(raider=middle[0], target=origin).exists())   # 15.000 < 20.000
-        self.set_strength(origin, points=25000, crew=1000)
-        self.agent(f"/api/agent/piracy/next/?game_account_id={middle[0].pk}")
-        self.assertTrue(PiracyRoute.objects.filter(raider=middle[0], target=origin, status="planned").exists())
-        # the passer collects only in its window before the delivery: before it, it is told when to come back
-        passer = self.passers(month)[0]
-        with patch.object(services, "collect_from", return_value=timezone.now() + timedelta(hours=3)):
-            data = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}")
-        self.assertIsNone(data["route"])
-        self.assertGreater(data["route_at"], int(timezone.now().timestamp()))
-
-    def test_the_champion_empties_its_passer_at_the_delivery(self):
-        big, middle, _small = self.lobbies()
-        month = self.plan(champions=[big[0], middle[0]])
-        for ga in self.accounts:
-            self.set_strength(ga, points=0, crew=1000)
-        self.set_strength(middle[0], points=0, crew=30000)
-        passer = next(ga for ga in self.accounts if str(ga.pk) == flow.today(month)[str(middle[0].pk)])
-        self.set_strength(passer, points=40000, crew=1000)
-        with patch.object(services, "empties_at", return_value=timezone.now() + timedelta(hours=2)):
-            data = self.agent(f"/api/agent/piracy/next/?game_account_id={middle[0].pk}")
-        self.assertFalse(PiracyRoute.objects.filter(raider=middle[0], target=passer).exists())
-        self.assertTrue(data["route_at"])
-        with patch.object(services, "empties_at", return_value=timezone.now() - timedelta(minutes=1)):
-            data = self.agent(f"/api/agent/piracy/next/?game_account_id={middle[0].pk}")
-        self.assertEqual(data["route"]["target_game_account_id"], str(passer.pk))
-
-    def test_regroup_keeps_the_champions(self):
-        month = self.plan()
-        before = sorted(month.champions.values_list("game_account_id", flat=True))
-        self.client.post("/pirataria/", {"action": "regroup", "server": "s1-br"})
-        month = PiracyMonth.objects.get(status="open")
-        self.assertEqual(sorted(month.champions.values_list("game_account_id", flat=True)), before)
-
-    def test_a_new_account_joins_as_an_origin(self):
-        month = self.plan()
-        lobby = self.accounts[0].account
-        ga = GameAccount.objects.create(account=lobby, lobby_account_id=99, server_id="s1-br", name="Nova",
-                                        server_language="br", server_number=1)
-        AccountSnapshot.objects.create(account=lobby, game_account=ga, cities=_fortress_city(99), base_snapshot={})
-        with patch("apps.jobs.signals.dispatch_job", create=True):
-            self.jobs[ga.pk] = Job.objects.create(account=lobby, node=self.node, game_account=ga, action_code=17, status="scheduled")
-        self.set_strength(ga, points=0, crew=1000)
-        self.agent(f"/api/agent/piracy/next/?game_account_id={self.accounts[0].pk}")
-        self.assertEqual(month.members.get(game_account=ga).role, "origin")
-        # its job stops: it leaves the plan (and comes back when the job runs again)
-        Job.objects.filter(game_account=ga).update(status="cancelled")
-        self.agent(f"/api/agent/piracy/next/?game_account_id={self.accounts[0].pk}")
-        self.assertFalse(month.members.filter(game_account=ga).exists())
-
-
 class FinalPhaseTests(Base):
     def test_nobody_converts_in_the_final_phase(self):
         month = self.plan()
@@ -487,7 +360,6 @@ class TurnResetTests(Base):
             snap.base_snapshot["piracy_highscore"]["time_left"] = 5 * 3600     # the ranking turns in 5 hours
             snap.save()
         month = self.plan(direct_points=0)
-        self.no_passers(month)
         champion = month.members.filter(role="champion").first().game_account
         self.set_strength(champion, points=0, crew=30000)
         data = self.agent(f"/api/agent/piracy/next/?game_account_id={champion.pk}")
@@ -505,7 +377,7 @@ class TurnResetTests(Base):
 class ConvertingBoardTests(Base):
     def test_passer_conversion_renders_in_local_time(self):
         month = self.plan()
-        passer = self.passers(month)[0]
+        passer = month.members.filter(role="origin").first().game_account
         until = int((timezone.now() + timedelta(minutes=20)).timestamp())
         job = self.jobs[passer.pk]
         inputs = json.loads(job.inputs_json)
@@ -513,7 +385,7 @@ class ConvertingBoardTests(Base):
         job.inputs_json = json.dumps(inputs)
         job.save(update_fields=["inputs_json"])
         result = services.board(month, {})
-        node = next(n for n in result["passers"] if n["ga"].pk == passer.pk)
+        node = next(n for n in result["passers"] + result["origins"] if n["ga"].pk == passer.pk)
         expected = datetime.fromtimestamp(until, tz=timezone.get_current_timezone())
         self.assertEqual(node["text"], f"convertendo · pronta {expected:%H:%M}")
         response = self.client.get("/pirataria/", {"server": "s1-br"})
@@ -571,7 +443,6 @@ class ChampionBalanceTests(Base):
         middle = [ga for ga in self.accounts if ga.account.label == "medio"]
         small = [ga for ga in self.accounts if ga.account.label == "pequeno"]
         month = self.plan(champions=[big[0], middle[0]], direct_points=0)
-        self.no_passers(month)
         for ga in self.accounts:
             self.set_strength(ga, points=0, crew=1000)
         target = small[0]                                                    # of a third lobby: both may take it
@@ -629,30 +500,6 @@ class CrewBonusTests(Base):
         self.assertNotIn("ninguém", of_big["why"])
 
 
-class ConvertToWinTests(Base):
-    """N-254: a passer that does not beat an origin yet gets the raid with the points to convert first; the hub decides
-    on the strength the agent has just read."""
-
-    def test_the_passer_raids_only_who_it_beats_and_converts_in_the_morning(self):
-        # N-263: the conversion is the crew plan's (in the morning of its day); at the raid it takes only who it beats
-        month = self.plan()
-        window = patch.object(services, "collect_from", return_value=timezone.now() - timedelta(minutes=1))
-        window.start()
-        self.addCleanup(window.stop)
-        members = services.members_now(month)
-        passer = next(m.game_account for m in members if m.role == "passer")
-        origin = next(m.game_account for m in members if m.role == "origin" and m.game_account.account_id != passer.account_id)
-        for ga in self.accounts:
-            self.set_strength(ga, points=0, crew=30000 if any(m.role == "champion" and m.game_account_id == ga.pk for m in members) else 1000)
-        self.set_strength(origin, points=15000, crew=1600)
-        self.set_strength(passer, points=0, crew=0)                          # what the job saved last time (old)
-        data = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}&crew=1500&points=20000")
-        self.assertIsNone(data["route"])                                     # 1.500 does not beat 1.600 yet
-        need = int(1600 * services.ratio_for(month.min_win_percent)) + 1
-        again = self.agent(f"/api/agent/piracy/next/?game_account_id={passer.pk}&crew={need + 10}&points=15000")
-        self.assertEqual((again["route"]["target_game_account_id"], again["route"]["convert_points"]), (str(origin.pk), 0))
-
-
 class MonthRollTests(Base):
     """N-255: at the ranking turn the next month starts by itself, with champions that were not yet."""
 
@@ -668,31 +515,6 @@ class MonthRollTests(Base):
         self.assertEqual((new.pair_days, new.rotate_days), (4, 3))
         origin = new.members.filter(role="origin").first().game_account
         self.assertTrue(self.agent(f"/api/agent/piracy/next/?game_account_id={origin.pk}")["hold"])   # never out of a plan
-
-
-class TurnPassersTests(Base):
-    """N-263: the day's agenda is drawn once and kept; the passer converts ahead the least that beats an origin."""
-
-    def test_agenda_kept_and_passer_preconverts(self):
-        month = self.plan()
-        first = flow.agenda(month)
-        for ga in self.accounts:
-            self.set_strength(ga, points=20000, crew=5000)                # the crews change...
-        month.refresh_from_db()
-        self.assertEqual(flow.agenda(month), first)                       # ...the agenda does not
-        members = services.members_now(month)
-        passer = next(m.game_account for m in members if m.role == "passer")
-        for ga in self.accounts:
-            self.set_strength(ga, points=15000, crew=1600)
-        for m in members:
-            if m.role == "champion":
-                self.set_strength(m.game_account, points=0, crew=30000)   # a champion beats its passers
-        self.set_strength(passer, points=20000, crew=1500)
-        with patch.object(services, "collect_from", return_value=timezone.now() + timedelta(hours=3)):
-            plan = services.plan_for(passer)
-        self.assertGreater(plan["convert_total"], 0)                      # N-263: converted a part at each mission
-        self.assertGreater(plan["convert_by"], 0)
-        self.assertEqual(plan["share_percent"], 0)                        # a passer has no periodic share
 
 
 class LostRaidTests(Base):
@@ -760,119 +582,100 @@ class DailyFlowPiecesTests(Base):
         route.refresh_from_db()
         self.assertAlmostEqual((route.arrives_at - timezone.now()).total_seconds(), 1800, delta=30)
 
-    def test_raids_of_the_old_roles_are_dropped(self):
-        month = self.plan()
-        members = services.members_now(month)
-        origins = [m.game_account for m in members if m.role == "origin"]
-        stale = PiracyRoute.objects.create(month=month, group=1, week=1, stage=1, raider=origins[0], target=origins[1],
-                                           due_from=timezone.now(), due_until=timezone.now() + timedelta(hours=6))
-        services.drop_stale(month, members)
-        stale.refresh_from_db()
-        self.assertEqual((stale.status, stale.message), ("skipped", "os papéis trocaram"))
 
-    def test_the_page_shows_the_day_and_who_takes_whom(self):
-        month = self.plan()
-        page = self.client.get("/pirataria/?server=s1-br").content.decode()
-        self.assertIn("Quem rouba quem hoje", page)
-        self.assertIn("Chegou às campeãs", page)
-        for champion, passer in flow.today(month).items():
-            name = next(ga.name for ga in self.accounts if str(ga.pk) == passer)
-            self.assertIn(name, page)
-        self.assertIn("lobby", page)
 
-    def test_the_crew_plan_gives_each_passer_the_strength_of_its_day(self):
+class TreeTests(Base):
+    """N-263: the day's tree — every account hangs on a champion or on an account that beats it, of another lobby,
+    the pair free; as many hops as needed, the strength growing towards the champions."""
+
+    def lobbies(self):
         big = [ga for ga in self.accounts if ga.account.label == "grande"]
         middle = [ga for ga in self.accounts if ga.account.label == "medio"]
-        month = self.plan(champions=[big[0], middle[0]])
+        small = [ga for ga in self.accounts if ga.account.label == "pequeno"]
+        return big, middle, small
+
+    def setup_chain(self, **kwargs):
+        big, middle, small = self.lobbies()
+        month = self.plan(champions=[big[0], middle[0]], **kwargs)
         for ga in self.accounts:
-            self.set_strength(ga, points=12000, crew=2300)                  # base 900 + the bonus of 12.000
-        self.set_strength(big[0], points=0, crew=15000)
-        self.set_strength(middle[0], points=0, crew=15000)
-        rows = services.crew_plan(month)
-        self.assertEqual(len([r for r in rows if r["day"] == 0]), 2)
+            self.set_strength(ga, points=0, crew=500)
+        self.set_strength(big[0], points=0, crew=30000)
+        self.set_strength(middle[0], points=0, crew=30000)
+        self.set_strength(small[0], points=15000, crew=5000)
+        self.set_strength(big[1], points=12000, crew=3000)
+        self.set_strength(middle[1], points=12000, crew=1500)
+        self.set_strength(big[2], points=12000, crew=1000)
+        return month, big, middle, small
+
+    def test_the_chain_grows_in_strength_and_crosses_lobbies(self):
+        month, big, middle, small = self.setup_chain()
+        t = daytree.build(month)
         ratio = services.ratio_for(month.min_win_percent)
-        mine = next(r for r in rows if r["day"] == 0 and r["champion"] == big[0])
-        # it must beat the origins of the big lobby: 2.300 at the raid x the chance's ratio
-        self.assertEqual(mine["target"], int(2300 * ratio) + 1)
-        self.assertTrue(mine["sources"])
-        self.assertEqual(mine["cap"], int(15000 / ratio))
-        self.assertTrue(all(o.account_id == big[0].account_id for o in mine["sources"]))
-        # 12.000 points, base 900: 339 crew (3.390 points) leave 8.610, the bonus stays -> 1.239 + 1.400 = target
-        self.assertEqual(mine["convert"], 3390)
-        # 8.000 points: only 1.000 above the bonus limit (100 crew) -> it cannot get there today
-        self.set_strength(mine["passer"], points=8000, crew=2300)
-        short = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
-        self.assertIsNone(short["convert"])
-        # an origin with a crew out of reach does not raise the bar for the others: it is left out
-        strong = mine["sources"][0]
-        self.set_strength(mine["passer"], points=12000, crew=2300)
-        self.set_strength(strong, points=1000, crew=8000)
-        kept = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
-        self.assertEqual((kept["target"], kept["convert"]), (int(2300 * ratio) + 1, 3390))
-        self.assertIn(strong, kept["left_out"])
-        self.set_strength(strong, points=12000, crew=2300)
-        self.set_strength(mine["passer"], points=30000, crew=2300)
-        again = next(r for r in services.crew_plan(month) if r["day"] == 0 and r["champion"] == big[0])
-        self.assertGreater(again["convert"], 0)
-        with patch.object(services, "collect_from", return_value=timezone.now() + timedelta(hours=3)):
-            plan = services.plan_for(mine["passer"])
-            # what reaches the strength, by the start of its collecting (a part at each mission, by the agent)
-            self.assertEqual(plan["convert_total"], again["convert"])
-            self.assertEqual(plan["share_percent"], 0)
-            # at the strength: it stops
-            self.set_strength(mine["passer"], points=30000, crew=again["target"] + 5)
-            self.assertEqual(services.plan_for(mine["passer"])["convert_total"], 0)
-        # collecting: what it holds is the champion's, nothing is converted
-        self.set_strength(mine["passer"], points=30000, crew=2300)
-        with patch.object(services, "collect_from", return_value=timezone.now() - timedelta(minutes=1)):
-            self.assertEqual(services.plan_for(mine["passer"])["convert_total"], 0)
+        for node in t.nodes.values():
+            if node.parent is None:
+                continue
+            self.assertNotEqual(node.ga.account_id, node.parent.ga.account_id)
+            self.assertGreaterEqual(node.parent.power, node.at_raid * ratio)
+        self.assertTrue(t.node(small[0]).parent.champion)               # the strongest goes straight to a champion
+        self.assertEqual(t.node(big[1]).parent.ga, small[0])            # 3.000 hangs on the 5.000 of another lobby
+        self.assertEqual(t.node(big[1]).depth, 2)
+        self.assertEqual(t.node(small[0]).role, "passer")
+        self.assertIn(small[0].pk, {m.game_account_id for m in services.members_now(month) if m.role == "passer"})
+
+    def test_direct_points_go_straight_to_a_champion(self):
+        month, big, middle, small = self.setup_chain(direct_points=20000)
+        self.set_strength(big[1], points=25000, crew=3000)
+        t = daytree.build(month)
+        self.assertTrue(t.node(big[1]).parent.champion)
+        self.assertEqual(t.node(big[1]).why, "direto")
+
+    def test_the_hops_are_timed_back_from_the_delivery(self):
+        month, big, middle, small = self.setup_chain()
+        t = daytree.build(month)
+        carrier = t.node(small[0])
+        for child in carrier.children:
+            self.assertLessEqual(child.send_at, carrier.send_at)        # its own ones are in before it is taken
+            self.assertGreaterEqual(child.send_at, carrier.collect_from)
+        self.assertEqual(carrier.taken_at, t.deliver)                    # the champion's last raid lands at the delivery
+
+    def test_the_raider_takes_its_own_ones_when_their_time_comes(self):
+        month, big, middle, small = self.setup_chain()
+        t = daytree.build(month)
+        child = next(c for c in t.node(small[0]).children if c.points >= month.min_points)
+        early = self.agent(f"/api/agent/piracy/next/?game_account_id={small[0].pk}")
+        if child.send_at > timezone.now():
+            self.assertIsNone(early["route"])
+            self.assertGreater(early["route_at"], int(timezone.now().timestamp()))
+        data = services.next_for(small[0], now=child.send_at + timedelta(minutes=1))
+        self.assertEqual(data["route"]["target_game_account_id"], str(child.ga.pk))
+
+    def test_an_account_no_chain_reaches_gets_someone_converting_for_it(self):
+        month, big, middle, small = self.setup_chain()
+        self.set_strength(big[3], points=15000, crew=6000)              # too strong for every account of another lobby
+        PiracyRoute.objects.create(month=month, group=1, week=1, stage=1, raider=middle[0], target=big[3], status="done",
+                                   due_from=timezone.now(), due_until=timezone.now())   # its champion's pair is locked
+        self.set_strength(small[0], points=40000, crew=5000)
+        t = daytree.build(month)
+        self.assertIn(big[3].pk, {n.pk for n in t.unreached})
+        ratio = services.ratio_for(month.min_win_percent)
+        target = int(6000 * ratio) + 1
+        builder = t.builders[small[0].pk]
+        self.assertEqual((builder["target"], builder["for"]), (target, big[3]))
+        self.assertEqual(builder["convert"], services.convert_for(5000 - 1400, 40000, target, int(30000 / ratio) - 1400))
+        plan = services.plan_for(small[0])
+        self.assertEqual((plan["convert_total"], plan["share_percent"]), (builder["convert"], 0))
+
+    def test_raids_the_tree_no_longer_has_are_dropped(self):
+        month, big, middle, small = self.setup_chain()
+        stale = PiracyRoute.objects.create(month=month, group=1, week=1, stage=1, raider=middle[2], target=big[1],
+                                           due_from=timezone.now(), due_until=timezone.now() + timedelta(hours=6))
+        services.drop_stale(month, daytree.build(month))
+        stale.refresh_from_db()
+        self.assertEqual((stale.status, stale.message), ("skipped", "a corrente mudou"))
+
+    def test_the_page_shows_the_tree(self):
+        month, big, middle, small = self.setup_chain()
         page = self.client.get("/pirataria/?server=s1-br").content.decode()
-        self.assertIn("Plano de tripulação", page)
-
-
-class CrewHorizonTests(Base):
-    """N-263: the agenda of the next block is drawn ahead, so an account that passes on its first day converts in the
-    days before; an account with no passer day ahead keeps the daily share."""
-
-    def test_the_next_block_is_known_and_its_passers_convert_ahead(self):
-        big = [ga for ga in self.accounts if ga.account.label == "grande"]
-        middle = [ga for ga in self.accounts if ga.account.label == "medio"]
-        month = self.plan(champions=[big[0], middle[0]])
-        slots = flow.upcoming(month)
-        self.assertGreater(max(s["offset"] for s in slots), month.pair_days - 1)    # it reaches into the next block
-        month.refresh_from_db()
-        self.assertEqual(len([k for k in month.turns if k.startswith("block:")]), 2)
-        for ga in self.accounts:
-            self.set_strength(ga, points=30000, crew=2300)
-        self.set_strength(big[0], points=0, crew=15000)
-        self.set_strength(middle[0], points=0, crew=15000)
-        later = next(s for s in slots if s["offset"] >= 1)
-        passer = next(ga for ga in self.accounts if str(ga.pk) == later["passer"])
-        if passer.pk not in {g.pk for g in self.passers(month)}:
-            plan = services.plan_for(passer)
-            self.assertIsNotNone(plan["convert_total"])
-            self.assertEqual(plan["share_percent"], 0)
-        planned = {s["passer"] for s in slots}
-        other = next((ga for ga in self.accounts[1:] if str(ga.pk) not in planned and ga not in (big[0], middle[0])), None)
-        if other is not None:
-            plan = services.plan_for(other)
-            self.assertIsNone(plan["convert_total"])
-            self.assertEqual(plan["share_percent"], month.share_percent)
-
-
-class WaitToBeCollectedTests(Base):
-    """N-263: an account still to be collected by an earlier passer does not convert for its own passer day yet."""
-
-    def test_no_conversion_while_still_to_be_collected(self):
-        month = self.plan()
-        rows = [{"day": 0, "passer": self.accounts[7], "sources": [self.accounts[1]], "target": 2000},
-                {"day": 1, "passer": self.accounts[1], "sources": [], "target": 3000, "convert": 5000,
-                 "by": timezone.now() + timedelta(days=1), "now": 1000, "cap": 9000}]
-        with patch.object(services, "crew_plan", return_value=rows):
-            conv = services.conversion_plan(month, self.accounts[1], [], {"crew": 1000, "points": 20000}, None)
-        self.assertEqual(conv["total"], 0)
-        self.assertIn("espera ser recolhida", conv["why"])
-        rows[0]["sources"] = []
-        with patch.object(services, "crew_plan", return_value=rows):
-            conv = services.conversion_plan(month, self.accounts[1], [], {"crew": 1000, "points": 20000}, None)
-        self.assertEqual(conv["total"], 5000)
+        self.assertIn("Corrente de hoje", page)
+        self.assertIn("recolhe", page)
+        self.assertIn(small[0].name, page)
