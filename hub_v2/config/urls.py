@@ -58,6 +58,7 @@ urlpatterns = [
     path("users/", include("apps.users.urls")),
     path("notes/", include("apps.notes.urls")),
     path("atividades/", include("apps.audit.urls")),
+    path("suporte/", include("apps.support.urls")),
     path("organizacao/plano/", include("apps.billing.urls")),
     path("conta/", AccountView.as_view(), name="account"),
     path("conta/avatar/", AccountAvatarView.as_view(), name="account-avatar"),

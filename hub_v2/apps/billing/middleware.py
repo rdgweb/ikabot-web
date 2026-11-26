@@ -1,7 +1,7 @@
 """Read-only organizations (N-124): 30 days past due, a customer can look but not change anything."""
 from django.shortcuts import render
 
-ALWAYS = ("/organizacao/", "/logout/", "/login/", "/api/", "/settings/tour/", "/stats/", "/conta/")
+ALWAYS = ("/organizacao/", "/logout/", "/login/", "/api/", "/settings/tour/", "/stats/", "/conta/", "/suporte/")
 VIEWER_ALWAYS = ("/logout/", "/login/", "/api/", "/settings/tour/", "/stats/", "/conta/", "/organizacao/selecionar/")
 
 
@@ -20,7 +20,7 @@ class ReadOnlyOrganizationMiddleware:
 
                 # N-126: a viewer only looks — only their own account and leaving are theirs
                 from core.access import operator, platform_admin
-                platform_path = request.path.startswith(("/settings/", "/notes/", "/users/", "/sistema/", "/proxy/", "/captcha/", "/telegram/", "/telemetry/", "/django-admin/", "/accounts/docker-hosts/"))
+                platform_path = request.path.startswith(("/suporte/atendimento/", "/settings/", "/notes/", "/users/", "/sistema/", "/proxy/", "/captcha/", "/telegram/", "/telemetry/", "/django-admin/", "/accounts/docker-hosts/"))
                 if not request.path.startswith(VIEWER_ALWAYS) and not platform_path and not operator(user, organization):
                     return render(request, "billing/viewer_only.html", status=403)
                 if not request.path.startswith(ALWAYS) and not (platform_path and platform_admin(user)):

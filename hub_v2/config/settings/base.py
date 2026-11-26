@@ -92,6 +92,7 @@ INSTALLED_APPS = [
     "apps.website",
     "apps.billing",
     "apps.access_control",
+    "apps.support",
 ]
 
 MIDDLEWARE = [

@@ -29,7 +29,7 @@ def _seen(user) -> datetime:
     return stamp or (timezone.now() - timedelta(days=1))
 
 
-def items(limit: int = LIMIT, *, platform: bool = False) -> list[dict]:
+def items(limit: int = LIMIT, *, platform: bool = False, user=None) -> list[dict]:
     """The latest things, newest first (the managers already keep to the organization of whoever is logged in)."""
     from apps.captcha.models import CaptchaChallenge
     from apps.jobs.models import Job
@@ -37,6 +37,16 @@ def items(limit: int = LIMIT, *, platform: bool = False) -> list[dict]:
     from core.templatetags.hub_tags import action_name
 
     out = []
+    if user is not None:
+        from apps.access_control.policy import allowed
+        from apps.orgs.scope import current_organization
+        from apps.support.services import unread_for
+        support_platform = allowed(user, 'platform.support.view')
+        for ticket in unread_for(user, current_organization(), support_platform)[:5]:
+            out.append({'when': ticket.last_customer_at if support_platform else ticket.last_staff_at,
+                        'icon':'bi-headset', 'tone':'', 'title':f'{ticket.code}: {ticket.subject}',
+                        'note':'Chamado de suporte atualizado',
+                        'url':f'/suporte/{"atendimento/" if support_platform else ""}{ticket.pk}/'})
     notices = MessageAudit.objects.all() if platform else MessageAudit.objects.filter(game_account__isnull=False)
     for m in notices.order_by("-created_at")[:limit]:   # rows without an account are the platform's (system administrator)
         title = (m.title or m.body or "Aviso").strip().splitlines()[0][:90]
@@ -59,7 +69,7 @@ class BellCountView(LoginRequiredMixin, View):
     def get(self, request):
         seen = _seen(request.user)
         try:
-            new = sum(1 for i in items(platform=_staff(request.user)) if i["when"] and i["when"] > seen)
+            new = sum(1 for i in items(platform=_staff(request.user), user=request.user) if i["when"] and i["when"] > seen)
         except Exception:  # noqa: BLE001 — the bell never breaks a page
             new = 0
         return render(request, "orgs/partials/bell_count.html", {"new": new})
@@ -72,7 +82,7 @@ class BellListView(LoginRequiredMixin, View):
         from apps.settings_app.utils import set_setting
 
         seen = _seen(request.user)
-        rows = items(platform=_staff(request.user))
+        rows = items(platform=_staff(request.user), user=request.user)
         for row in rows:
             row["new"] = bool(row["when"] and row["when"] > seen)
         set_setting(_seen_key(request.user), timezone.now().isoformat())

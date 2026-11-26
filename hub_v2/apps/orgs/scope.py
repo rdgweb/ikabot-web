@@ -21,6 +21,10 @@ from django.core.exceptions import ValidationError
 
 # model -> (lookup up to the anchor, anchor, rows without the link are shared by everybody)
 SCOPES: dict[str, tuple[str, str, bool]] = {
+    "support.Ticket": ("organization", "org", False),
+    "support.Message": ("ticket__organization", "org", False),
+    "support.TicketEvent": ("ticket__organization", "org", False),
+    "support.Receipt": ("ticket__organization", "org", False),
     # the organization column itself
     "accounts.Node": ("organization", "org", False),
     "accounts.DockerHost": ("organization", "org", False),

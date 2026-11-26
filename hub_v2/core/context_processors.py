@@ -45,6 +45,7 @@ def nav_context(request):
             "label": "Minha organização",
             "items": [
                 {"name": "Visão geral", "url": "/organizacao/", "icon": "bi-building-gear"},
+                {"name": "Suporte", "url": "/suporte/", "icon": "bi-life-preserver"},
                 {"name": "Subcontas", "url": "/organizacao/subcontas/", "icon": "bi-toggles"},
                 {"name": "Proxies e agente", "url": "/organizacao/proxies/", "icon": "bi-shield-lock"},
                 {"name": "Membros", "url": "/organizacao/membros/", "icon": "bi-people"},
@@ -66,6 +67,7 @@ def nav_context(request):
                 {"name": "Mensagens", "url": "/telegram/audit/", "icon": "bi-chat-dots", "perm": "staff"},
                 {"name": "Captcha", "url": "/captcha/", "icon": "bi-robot", "perm": "staff"},
                 {"name": "Notas", "url": "/notes/", "icon": "bi-card-checklist", "perm": "staff"},
+                {"name": "Atendimento", "url": "/suporte/atendimento/", "icon": "bi-headset", "perm": "staff"},
                 {"name": "Atualizações", "url": "/notes/atualizacoes/", "icon": "bi-journal-code", "perm": "staff"},
                 {"name": "Atividades", "url": "/atividades/", "icon": "bi-clock-history", "perm": "access"},
                 {"name": "Configurações", "url": "/settings/", "icon": "bi-gear", "perm": "staff"},

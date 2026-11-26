@@ -23,6 +23,9 @@ RETENTION_DAYS = getattr(settings, "AUDIT_RETENTION_DAYS", 365)
 
 # action -> (category, what the screen says)
 ACTIONS = {
+    "support.created": ("suporte", "Abriu chamado de suporte"),
+    "support.replied": ("suporte", "Respondeu chamado de suporte"),
+    "support.changed": ("suporte", "Atualizou chamado de suporte"),
     "retention.batch": ("config", "Processou lote de retenção"),
     "retention.completed": ("config", "Concluiu retenção do banco"),
     "login": ("acesso", "Entrou"),

@@ -1,0 +1,24 @@
+{% extends base_template|default:"base.html" %}
+{% block title %}{% if platform_queue %}Atendimento{% else %}Suporte{% endif %}{% endblock %}
+{% block content %}
+{% include "support/_style.html" %}
+<div class="sup-shell">
+  <header class="sup-hero"><div><h1><i aria-hidden="true" class="bi {% if platform_queue %}bi-headset{% else %}bi-life-preserver{% endif %}"></i> {% if platform_queue %}Atendimento{% else %}Como podemos ajudar?{% endif %}</h1>
+    <p>{% if platform_queue %}Acompanhe e responda aos chamados das organizações.{% else %}{{ support_org.name }} · Abra uma solicitação e acompanhe as respostas da equipe neste espaço.{% endif %}</p></div>
+    <div class="sup-actions">{% if platform_queue %}<a href="{% url 'support:list' %}" class="btn btn-secondary">Minha organização</a>{% else %}{% if can_queue %}<a href="{% url 'support:queue' %}" class="btn btn-secondary">Fila de atendimento</a>{% endif %}{% if can_write %}<a href="{% url 'support:create' %}" class="btn btn-primary"><i aria-hidden="true" class="bi bi-plus-lg"></i> Abrir chamado</a>{% endif %}{% endif %}</div>
+  </header>
+  <div class="sup-summary"><span class="sup-chip">{{ active_count }} em acompanhamento</span><span class="sup-chip resolved">{{ counts.resolved|default:0 }} resolvido(s)</span></div>
+  <section class="sup-card"><form method="get" class="sup-form sup-filters">
+    <div><label for="support-search">Buscar</label><input id="support-search" name="q" value="{{ q }}" placeholder="Assunto ou código{% if platform_queue %}, organização{% endif %}"></div>
+    <div><label for="support-status">Estado</label><select id="support-status" name="status"><option value="active" {% if status_filter == 'active' %}selected{% endif %}>Em acompanhamento</option><option value="all" {% if status_filter == 'all' %}selected{% endif %}>Todos</option>{% for key,label in states %}<option value="{{ key }}" {% if status_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label for="support-category">Categoria</label><select id="support-category" name="category"><option value="">Todas</option>{% for key,label in categories %}<option value="{{ key }}" {% if category_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    {% if platform_queue %}<div><label for="support-assigned">Responsável</label><select id="support-assigned" name="assigned"><option value="">Todos</option><option value="me" {% if assigned_filter == 'me' %}selected{% endif %}>Meus atendimentos</option><option value="unassigned" {% if assigned_filter == 'unassigned' %}selected{% endif %}>Sem responsável</option></select></div>{% endif %}
+    <button class="btn btn-secondary" type="submit"><i aria-hidden="true" class="bi bi-funnel"></i> Filtrar</button>
+  </form></section>
+  {% for ticket in tickets %}
+  <a href="{{ ticket.detail_url }}" class="sup-ticket"><div class="sup-ticket-main"><div class="sup-muted">{{ ticket.code }} · {{ ticket.get_category_display }}{% if platform_queue %} · {{ ticket.organization.name }}{% endif %}</div><h2>{{ ticket.subject }}</h2><div class="sup-muted">Atualizado {{ ticket.updated_at|date:"d/m/Y H:i" }}{% if ticket.assigned_to %} · {{ ticket.assigned_to.get_full_name|default:ticket.assigned_to.username }}{% endif %}</div></div><div class="sup-actions">{% if ticket.is_unread %}<span class="sup-chip new">Nova atualização</span>{% endif %}<span class="sup-chip {{ ticket.status }}">{{ ticket.get_status_display }}</span><i aria-hidden="true" class="bi bi-chevron-right"></i></div></a>
+  {% empty %}<div class="sup-card sup-empty"><i aria-hidden="true" class="bi bi-chat-square-heart"></i><h2>Nenhum chamado por aqui</h2><p>{% if q or category_filter or status_filter != 'active' %}Tente outros filtros para encontrar sua solicitação.{% elif platform_queue %}Novas solicitações aparecerão nesta fila.{% else %}Quando precisar, abra um chamado para conversar com a equipe.{% endif %}</p></div>{% endfor %}
+  {% if tickets.paginator.num_pages > 1 %}<nav class="sup-pages" aria-label="Páginas dos chamados">{% if tickets.has_previous %}<a class="btn btn-secondary" href="?{{ querystring }}&amp;page={{ tickets.previous_page_number }}">Anterior</a>{% endif %}<span>{{ tickets.number }} / {{ tickets.paginator.num_pages }}</span>{% if tickets.has_next %}<a class="btn btn-secondary" href="?{{ querystring }}&amp;page={{ tickets.next_page_number }}">Próxima</a>{% endif %}</nav>{% endif %}
+  <p class="sup-muted">As respostas ficam registradas no chamado e as atualizações aparecem no sino. {% if not platform_queue %}Os membros autorizados da sua organização podem acompanhar este histórico.{% endif %}</p>
+</div>
+{% endblock %}

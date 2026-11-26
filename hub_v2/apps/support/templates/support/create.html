@@ -1,0 +1,10 @@
+{% extends base_template|default:"base.html" %}
+{% block title %}Abrir chamado{% endblock %}
+{% block content %}{% include "support/_style.html" %}
+<div class="sup-shell"><header class="sup-hero"><div><h1><i aria-hidden="true" class="bi bi-chat-square-text"></i> Abrir chamado</h1><p>{{ support_org.name }} · Conte o que aconteceu. Você poderá acompanhar a conversa pelo Hub.</p></div><a href="{{ support_home }}" class="btn btn-secondary">Voltar ao suporte</a></header>
+<div class="sup-grid"><section class="sup-card"><form method="post" class="sup-form">
+{% csrf_token %}{{ form.non_field_errors }}{{ form.request_id }}
+{% for field in form.visible_fields %}<div class="sup-field{% if field.name == 'include_context' %} sup-check{% endif %}">{% if field.name == 'include_context' %}<label>{{ field }} {{ field.label }}</label>{% else %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% endif %}{{ field.errors }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</div>{% endfor %}
+<button type="submit" class="btn btn-primary"><i aria-hidden="true" class="bi bi-send"></i> Enviar chamado</button>
+</form></section><aside><section class="sup-card"><h2>Uma boa descrição ajuda</h2><ol class="sup-help"><li>Informe a tela e a ação que tentou realizar.</li><li>Descreva o resultado esperado e o que aconteceu.</li><li>Se houver erro, copie a mensagem e indique quando ocorreu.</li></ol><p class="sup-muted">Envie somente as informações necessárias. A página e a versão do Hub só serão anexadas se você marcar a opção.</p></section><section class="sup-card"><h2>Depois de enviar</h2><p>O chamado ganha um código e entra na fila de atendimento. Respostas, mudanças de estado e responsável ficam no histórico.</p></section></aside></div></div>
+{% endblock %}
