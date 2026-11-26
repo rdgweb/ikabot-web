@@ -68,7 +68,7 @@
           </div>
           <div class="min-w-0 flex-1">
             <span class="text-sm font-medium text-ink block truncate">{{ ga.name|default:ga.server_id }}</span>
-            <span class="text-[10px] text-muted">{{ ga.server_id }}</span>
+            <span class="text-[10px] text-muted">{{ ga.server_id|world }}</span>
           </div>
           <span class="flex-shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors"
                 :style="isSelected('{{ ga.pk }}')
@@ -150,7 +150,7 @@
           </div>
           <div class="min-w-0 flex-1">
             <span class="text-sm font-medium text-ink block truncate">{{ ga.name|default:ga.server_id }}</span>
-            <span class="text-[10px] text-muted">{{ ga.server_id }}</span>
+            <span class="text-[10px] text-muted">{{ ga.server_id|world }}</span>
           </div>
           <i class="bi bi-chevron-right text-xs text-muted"></i>
         </button>

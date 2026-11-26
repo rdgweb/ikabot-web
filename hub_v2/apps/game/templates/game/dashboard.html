@@ -43,7 +43,7 @@
     <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 !px-2 text-xs !w-auto">
       <option value="">Todos os servidores</option>
       {% for card in account_cards %}
-      <option value="{{ card.server_id }}">{{ card.player_name }} ({{ card.server_id }})</option>
+      <option value="{{ card.server_id }}">{{ card.player_name }} ({{ card.server_id|world }})</option>
       {% endfor %}
     </select>
 
@@ -173,7 +173,7 @@
        data-free-freighters="{{ card.free_freighters }}"
        data-max-freighters="{{ card.max_freighters }}"
        data-player="{{ card.player_name }}"
-       data-server-label="{{ card.server_id }}"
+       data-server-label="{{ card.server_id|world }}"
        data-total-wine-hours="{{ card.total_wine_hours|default:'' }}">
 
     {# ── Header (clickable to collapse) ── #}
@@ -226,7 +226,7 @@
             {% endif %}
             {% control_chip card.game_account_id %}
           </div>
-          <p class="text-xs text-muted">{{ card.server_id }} &middot; {{ card.city_count }} cidades</p>
+          <p class="text-xs text-muted">{{ card.server_id|world }} &middot; {{ card.city_count }} cidades</p>
         </div>
       </div>
 

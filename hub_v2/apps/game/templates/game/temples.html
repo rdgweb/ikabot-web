@@ -123,7 +123,7 @@
                   style="{% if island.available %}background: rgba(95,140,78,0.14); color: var(--ik-good);{% else %}background: rgba(0,0,0,0.05); color: var(--ik-muted);{% endif %}">
               {% if island.available %}disponível{% else %}indisponível{% endif %}</span>
           </div>
-          <div class="mt-0.5 truncate text-[11px] text-muted">{% if island.island_name %}{{ island.island_name }} · {% endif %}{{ island.server_id }}{% if island.level %} · construção {{ island.level }}{% if island.max_level_reached %} (máx){% endif %}{% endif %}</div>
+          <div class="mt-0.5 truncate text-[11px] text-muted">{% if island.island_name %}{{ island.island_name }} · {% endif %}{{ island.server_id|world }}{% if island.level %} · construção {{ island.level }}{% if island.max_level_reached %} (máx){% endif %}{% endif %}</div>
         </div>
       </div>
 

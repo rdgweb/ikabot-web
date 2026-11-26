@@ -41,7 +41,7 @@
           <td>
             {% if msg.game_account %}
               <span class="text-sm">{{ msg.game_account.name|default:msg.game_account.server_id }}</span>
-              <span class="text-[10px] text-muted font-mono">{{ msg.game_account.server_id }}</span>
+              <span class="text-[10px] text-muted font-mono">{{ msg.game_account.server_id|world }}</span>
             {% else %}
               <span class="text-muted">-</span>
             {% endif %}

@@ -29,7 +29,7 @@
   <h3><i class="bi bi-controller"></i> {{ group.account.label }} {% if not group.account.active %}<span class="org-chip off">conta pausada</span>{% endif %}</h3>
   {% for world in group.worlds %}
   <div class="org-row">
-    <div class="main"><b>{{ world.name|default:world.server_id }}</b><span>{{ world.server_language|upper }} · mundo {{ world.server_number }}</span></div>
+    <div class="main"><b>{{ world.name|default:world.server_id }}</b><span>{% with wname=world.server_id|world_name %}{% if wname %}{{ wname }} · {% endif %}{% endwith %}{{ world.server_language|upper }} · mundo {{ world.server_number }}</span></div>
     {% if world.blocked %}<span class="org-chip bad">bloqueada</span>
     {% elif world.active and group.account.active %}<span class="org-chip ok">ativa</span>
     {% else %}<span class="org-chip off">pausada</span>{% endif %}

@@ -27,7 +27,7 @@
     <select x-model="filterServer" @change="applyFilter()" class="form-input !py-1 text-xs !w-auto" style="padding-left: 0.6rem; padding-right: 2.25rem; min-width: 8.5rem;" aria-label="Filtrar por jogador" data-filter="player">
       <option value="">Todos os jogadores</option>
       {% for card in account_cards %}
-      <option value="{{ card.game_account_id }}" data-game-account="{{ card.game_account_id }}" data-account="{{ card.account.pk }}" data-node="{{ card.account.node_id|default_if_none:"" }}">{{ card.player_name }} · {{ card.server_id }}</option>
+      <option value="{{ card.game_account_id }}" data-game-account="{{ card.game_account_id }}" data-account="{{ card.account.pk }}" data-node="{{ card.account.node_id|default_if_none:"" }}">{{ card.player_name }} · {{ card.server_id|world }}</option>
       {% endfor %}
     </select>
     {% endif %}

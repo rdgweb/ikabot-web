@@ -136,6 +136,8 @@ TEMPLATES = [
                     ],
                 ),
             ],
+            # N-241: {{ server_id|world }} everywhere, without a {% load %} in each template
+            "builtins": ["apps.accounts.templatetags.world_tags"],
             "context_processors": [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
