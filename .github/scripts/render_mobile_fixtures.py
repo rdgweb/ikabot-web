@@ -43,6 +43,7 @@ request=RequestFactory().get('/'); request.user=root; request.organization=org; 
 nav=nav_context(request)['NAV_SECTIONS']
 paths=list(dict.fromkeys(item['url'] for section in nav for item in section['items']))
 paths += ['/accounts/create/','/accounts/nodes/create/','/profiles/presets/new/','/proxy/create/','/notes/nova/','/suporte/novo/',
+          '/intel/islands/','/intel/map/','/intel/targets/','/intel/dumps/',
           '/conta/','/conta/?tab=security','/conta/?tab=preferences',f'/accounts/{account.pk}/',f'/accounts/nodes/{node.pk}/',
           f'/profiles/presets/{preset.pk}/',f'/jobs/{job.pk}/',f'/notes/{note.pk}/']
 result={'pages':{},'partials':{},'status':{},'navigation':paths,'job_forms':{},'schema':None}

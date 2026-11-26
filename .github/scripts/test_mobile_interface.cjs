@@ -20,13 +20,14 @@ async function setup(width, preference=null, noStorage=false) {
   const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
   const page=await browser.newPage({viewport:{width,height:900}});
   page.setDefaultTimeout(10000);
-  await page.addInitScript(({preference,noStorage})=>{
+  await page.addInitScript(({preference,noStorage,font})=>{
     document.startViewTransition=undefined;
+    if(font)document.addEventListener('DOMContentLoaded',()=>document.body.style.fontFamily=font,{once:true});
     if(noStorage){Storage.prototype.getItem=()=>{throw new Error('Storage disabled');};Storage.prototype.setItem=()=>{throw new Error('Storage disabled');};}
     else if(preference!==null && !sessionStorage.getItem('mobile-test-initialized')){
       localStorage.setItem('sidebar-collapsed',preference);sessionStorage.setItem('mobile-test-initialized','1');
     }
-  },{preference,noStorage});
+  },{preference,noStorage,font:process.env.MOBILE_TEST_FONT||null});
   const state={failNavigation:false,form:'1002'};
   await page.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());
