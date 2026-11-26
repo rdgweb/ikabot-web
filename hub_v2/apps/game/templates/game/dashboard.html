@@ -704,14 +704,31 @@
               <i class="bi bi-shield-shaded"></i> Tropas totais
             </h4>
             <p class="text-lg font-bold text-ink">{{ card.troop_total|intcomma }}</p>
+            {% if card.transit.troops %}<p class="text-[11px] text-muted">{{ card.garrison_troops|intcomma }} nas cidades · {{ card.transit.troops|intcomma }} em trânsito</p>{% endif %}
           </div>
           <div class="p-3 rounded" style="background: var(--ik-sand-light);">
             <h4 class="text-xs font-semibold text-muted mb-2">
               <i class="bi bi-water"></i> Frotas totais
             </h4>
             <p class="text-lg font-bold text-ink">{{ card.ship_total|intcomma }}</p>
+            {% if card.transit.ships %}<p class="text-[11px] text-muted">{{ card.garrison_ships|intcomma }} nas cidades · {{ card.transit.ships|intcomma }} em trânsito</p>{% endif %}
           </div>
         </div>
+
+        {# N-140: one's own troops and warships on their way (a move between cities is not a loss) #}
+        {% if card.transit.movements %}
+        <div class="p-3 rounded" style="background: var(--ik-sand-light);">
+          <h4 class="text-xs font-semibold text-muted mb-2"><i class="bi bi-signpost-split"></i> Em trânsito</h4>
+          <div class="space-y-1">
+            {% for move in card.transit.movements %}
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span class="text-ink">{{ move.origin|default:"?" }} → {{ move.target|default:"?" }}{% if move.returning %} <span class="text-muted">(voltando)</span>{% endif %}</span>
+              <span class="font-mono text-muted">{% if move.troops %}{{ move.troops|intcomma }} tropas{% endif %}{% if move.troops and move.ships %} · {% endif %}{% if move.ships %}{{ move.ships|intcomma }} navios{% endif %} · chega em {{ move.left_seconds|duration_human }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
 
         {# ── Occupation / Blockade alert cards ── #}
         {% for city in card.cities %}
